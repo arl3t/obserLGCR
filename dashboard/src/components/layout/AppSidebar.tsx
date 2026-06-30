@@ -12,6 +12,7 @@ import {
   Ticket,
   User,
   Zap,
+  Radio,
   type LucideIcon,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -42,6 +43,7 @@ const navItems: NavItem[] = [
   { to: "/detection",         label: "Detección",             icon: ShieldAlert, end: true },
   { to: "/soc",               label: "Score IOC / Clasificación", icon: ClipboardList },
   { to: "/gestion",           label: "Gestión de incidentes", icon: ShieldCheck },
+  { to: "/noc",               label: "NOC",                   icon: Radio, end: true },
   { to: "/tickets",           label: "Tickets",               icon: Ticket },
   { to: "/admin/tickets-config", label: "Config. Tickets",    icon: Ticket },
 ];

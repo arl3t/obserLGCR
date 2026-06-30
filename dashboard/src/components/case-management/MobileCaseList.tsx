@@ -40,16 +40,15 @@ interface MobileCaseListProps {
   cases:        SocCase[];
   isLoading:    boolean;
   myOperatorCi: string;
-  /** Llamado al click en la card — abre la vista de investigación (o muestra
-   *  el bloqueo C4 si el viewport sigue siendo <800px). */
-  onInvestigate: (c: SocCase) => void;
+  /** Abre el panel lateral de detalle del incidente. */
+  onSelect: (c: SocCase) => void;
   /** Callback opcional para adoptar 1-click desde la card. Si no se pasa,
    *  la card no muestra el botón "Adoptar". */
   onAdopt?: (c: SocCase) => void;
 }
 
 export function MobileCaseList({
-  cases, isLoading, myOperatorCi, onInvestigate, onAdopt,
+  cases, isLoading, myOperatorCi, onSelect, onAdopt,
 }: MobileCaseListProps) {
   if (isLoading && cases.length === 0) {
     return (
@@ -78,7 +77,7 @@ export function MobileCaseList({
           key={c.id}
           c={c}
           isMine={!!myOperatorCi && c.operatorCi === myOperatorCi}
-          onInvestigate={onInvestigate}
+          onSelect={onSelect}
           onAdopt={onAdopt}
         />
       ))}
@@ -87,11 +86,11 @@ export function MobileCaseList({
 }
 
 function MobileCaseCard({
-  c, isMine, onInvestigate, onAdopt,
+  c, isMine, onSelect, onAdopt,
 }: {
   c: SocCase;
   isMine: boolean;
-  onInvestigate: (c: SocCase) => void;
+  onSelect: (c: SocCase) => void;
   onAdopt?: (c: SocCase) => void;
 }) {
   const sev = (SEV_COLOR[c.severity as Severity] ?? "#94a3b8");
@@ -111,7 +110,7 @@ function MobileCaseCard({
 
   return (
     <article
-      onClick={() => onInvestigate(c)}
+      onClick={() => onSelect(c)}
       style={{
         background: "#11161d",
         border: "1px solid #1c2530",
@@ -144,7 +143,7 @@ function MobileCaseCard({
         fontSize: 13, fontWeight: 600, color: "#d6e0ee",
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
       }}>
-        {c.srcIp || `#${c.id.slice(0, 8)}`}
+        {c.hostname || c.srcIp || `#${c.id.slice(0, 8)}`}
       </span>
       <span style={{
         gridColumn: "3", gridRow: "1",

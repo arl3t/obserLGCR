@@ -1,0 +1,114 @@
+/* obserLGCR — design system uptime monitor (WCAG 2.1 AA) */
+
+@layer base {
+  .dark {
+    --color-primary: #60a5fa;
+    --color-primary-foreground: #0a0e14;
+    --color-ring: #60a5fa;
+    --color-chart-1: #60a5fa;
+    --color-sidebar: #0a0e14;
+    --color-sidebar-border: #3d4a5c;
+    --obser-cyan: #60a5fa;
+    --obser-cyan-dim: color-mix(in srgb, #60a5fa 12%, transparent);
+    --obser-glow: color-mix(in srgb, #60a5fa 28%, transparent);
+  }
+
+  html {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+}
+
+@layer components {
+  .obser-shell {
+    min-height: 100dvh;
+    background-color: #0a0e14;
+    color: #f5f5f5;
+
+    /* Tokens uptime — disponibles en toda la app */
+    --ut-bg-card: #161c26;
+    --ut-bg-elevated: #1c2433;
+    --ut-border: #3d4a5c;
+    --ut-border-subtle: #2a3444;
+    --ut-text: #f5f5f5;
+    --ut-text-secondary: #b8c0cc;
+    --ut-text-muted: #9aa3b2;
+    --ut-success: #4ade80;
+    --ut-warning: #ffb300;
+    --ut-danger: #f87171;
+    --ut-accent: #60a5fa;
+    --ut-accent-hover: #93c5fd;
+    --ut-radius: 5px;
+    --ut-focus: 0 0 0 3px #60a5fa, 0 0 0 5px #0a0e14;
+  }
+
+  .obser-header {
+    border-bottom: 1px solid var(--ut-border);
+    background: color-mix(in srgb, var(--ut-bg-card) 94%, transparent);
+    backdrop-filter: blur(12px);
+  }
+
+  .obser-nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: var(--ut-radius);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--ut-text-secondary);
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .obser-nav-link:hover {
+    color: var(--ut-text);
+    background: color-mix(in srgb, var(--ut-accent) 10%, transparent);
+  }
+
+  .obser-nav-link[aria-current="page"] {
+    color: var(--ut-accent);
+    background: color-mix(in srgb, var(--ut-accent) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ut-accent) 30%, transparent);
+  }
+
+  .obser-stat-card {
+    border-radius: var(--ut-radius);
+    border: 1px solid var(--ut-border);
+    background: var(--ut-bg-card);
+    padding: 1rem;
+    transition: border-color 0.2s;
+  }
+
+  .obser-stat-card:hover {
+    border-color: color-mix(in srgb, var(--ut-accent) 40%, var(--ut-border));
+  }
+
+  .obser-panel {
+    border-radius: var(--ut-radius);
+    border: 1px solid var(--ut-border);
+    background: var(--ut-bg-card);
+    overflow: hidden;
+  }
+
+  .obser-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--ut-border-subtle);
+    background: var(--ut-bg-elevated);
+  }
+
+  .obser-mono {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .obser-pulse-online {
+    animation: obser-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes obser-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, #4ade80 45%, transparent); }
+    50% { opacity: 0.85; box-shadow: 0 0 0 4px transparent; }
+  }
+}

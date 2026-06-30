@@ -16,7 +16,7 @@
 
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/auth/useAuth";
+import { useAuth } from "@/auth/AuthContext";
 import { defaultHomeForTier, rolesToTier } from "@/auth/useSocTier";
 
 /** Borra todas las claves de sessionStorage relacionadas con el flujo OIDC */

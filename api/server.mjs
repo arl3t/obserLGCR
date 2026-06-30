@@ -6,6 +6,7 @@
  *   · Tickets                     → /api/tickets
  *   · Score IOC / Clasificación   → vía /api/incidents + /api/scoring-profiles
  *   · Registro de activos         → /api/assets
+ *   · NOC (monitoreo infra)       → /api/noc
  *
  * SIN AUTENTICACIÓN: el middleware requireAuth corre en "modo lab"
  * (OIDC_ENABLED=false, el default) → todas las requests pasan con un usuario
@@ -34,6 +35,12 @@ import ticketIntegrationsRouter from "./routes/ticketIntegrations.mjs";
 import scoringProfilesRouter from "./routes/scoringProfiles.mjs";
 import operatorsRouter from "./routes/operators.mjs";
 import { assetRegistryRouter } from "./routes/assetRegistry.mjs";
+import nocRouter from "./routes/noc.mjs";
+import authRouter from "./routes/auth.mjs";
+import platformUsersRouter from "./routes/platformUsers.mjs";
+import detectionRouter, { detectionIngestRouter } from "./routes/detection.mjs";
+import { runNocHeartbeatWatcher } from "./services/nocHeartbeatWatcher.mjs";
+import { primeCatalogCache } from "./services/sourceLogCatalog.mjs";
 
 const PORT = config.PORT;
 
@@ -87,6 +94,23 @@ app.use("/api/operators", operatorsRouter);
 // Registro de activos (usado por Detección/Gestión para contexto)
 app.use("/api/assets", assetRegistryRouter());
 
+// NOC — monitoreo de infraestructura (heartbeat de agentes sin requireAuth global)
+app.use("/api/auth", authRouter());
+app.use("/api/users", platformUsersRouter());
+app.use("/api/noc", nocRouter());
+
+const detRouter = detectionRouter();
+app.use("/api/detection", detectionIngestRouter());
+app.use("/api/detection", requireAuth(), detRouter);
+app.get("/api/detection-sources", requireAuth(), (req, res, next) => {
+  req.url = "/sources";
+  detRouter(req, res, next);
+});
+app.patch("/api/detection-sources/:family", requireAuth(), (req, res, next) => {
+  req.url = `/sources/${req.params.family}`;
+  detRouter(req, res, next);
+});
+
 // ── Manejador de errores ──────────────────────────────────────────────────────
 app.use((err, _req, res, _next) => {
   logger.error("unhandled_error", { msg: err?.message, stack: err?.stack });
@@ -98,9 +122,26 @@ app.use((err, _req, res, _next) => {
 const httpServer = createServer(app);
 initSocketIo(httpServer, { corsOrigins: config.socketIoCorsOrigins });
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, async () => {
   logger.info("obserlgcr_api_listening", { port: PORT, mode: "demo-noauth" });
   console.log(`obserLGCR API escuchando en :${PORT} (modo demo sin auth)`);
+
+  try {
+    await primeCatalogCache();
+  } catch (err) {
+    logger.warn({ msg: err.message }, "source_log_catalog_prime_failed");
+  }
+
+  // Heartbeat watcher NOC — evalúa dispositivos sin señal cada 30s
+  const nocWatcherMs = parseInt(process.env.NOC_WATCHER_INTERVAL_MS ?? "30000", 10);
+  if (nocWatcherMs > 0) {
+    setInterval(() => {
+      runNocHeartbeatWatcher().catch((err) =>
+        logger.error("noc_heartbeat_watcher_interval", { msg: err.message }),
+      );
+    }, nocWatcherMs);
+    logger.info("noc_heartbeat_watcher_started", { intervalMs: nocWatcherMs });
+  }
 });
 
 process.on("SIGTERM", () => httpServer.close(() => process.exit(0)));

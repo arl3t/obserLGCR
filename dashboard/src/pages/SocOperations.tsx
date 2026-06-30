@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { useSearchParams } from "react-router-dom";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -22,7 +23,12 @@ export function SocOperationsPage() {
   const tab = params.get("tab") ?? "score";
 
   return (
-    <Tabs
+    <>
+      <PageHeader
+        title="SOC"
+        subtitle="Score IOC enriquecido y clasificación de incidentes"
+      />
+      <Tabs
       value={tab}
       onValueChange={(v) => setParams({ tab: v }, { replace: true })}
       className="flex flex-col"
@@ -38,5 +44,6 @@ export function SocOperationsPage() {
         <TabsContent value="clasificacion" className="m-0"><IncidentClassificationPage /></TabsContent>
       </Suspense>
     </Tabs>
+    </>
   );
 }

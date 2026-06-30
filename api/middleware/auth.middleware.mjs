@@ -41,10 +41,15 @@ import { timingSafeEqual } from "node:crypto";
 import jwt from "jsonwebtoken";
 import JwksRsa from "jwks-rsa";
 import { logger } from "../logger.mjs";
+import {
+  verifyPlatformToken,
+  platformPayloadToUser,
+} from "../services/platformAuth.mjs";
 
 // ── Configuración ─────────────────────────────────────────────────────────────
 
 const OIDC_ENABLED       = process.env.OIDC_ENABLED?.trim()                  === "true";
+const PLATFORM_AUTH_ENABLED = process.env.PLATFORM_AUTH_ENABLED?.trim()      !== "false";
 const OIDC_ISSUER        = (process.env.OIDC_ISSUER        ?? "").trim();
 const OIDC_JWKS_URI      = (process.env.OIDC_JWKS_URI      ?? "").trim();
 const OIDC_ALLOW_API_KEY = process.env.OIDC_ALLOW_API_KEY_FALLBACK?.trim()   === "true";
@@ -174,8 +179,45 @@ export function requireAuth(minRole = null) {
   }
 
   return async function jwtAuthMiddleware(req, res, next) {
+    const authHeader = (req.headers["authorization"] ?? "").trim();
+
     // ──────────────────────────────────────────────────────────────────────
-    // MODO LAB (OIDC_ENABLED=false): sin validación, retrocompatible
+    // MODO PLATAFORMA (PostgreSQL JWT): sin OIDC, auth local habilitada
+    // ──────────────────────────────────────────────────────────────────────
+    if (!OIDC_ENABLED && PLATFORM_AUTH_ENABLED) {
+      if (!authHeader.toLowerCase().startsWith("bearer ")) {
+        return res.status(401).json({
+          ok: false,
+          error: "Autenticación requerida",
+          hint: "Incluye Authorization: Bearer <jwt> (login en /api/auth/login)",
+        });
+      }
+
+      const token = authHeader.slice(7).trim();
+      try {
+        const payload = verifyPlatformToken(token);
+        req.user = platformPayloadToUser(payload);
+
+        if (minRole !== null && !req.user.roles.includes(minRole)) {
+          return res.status(403).json({
+            ok: false,
+            error: "Permisos insuficientes para esta operación",
+            required: minRole,
+            has: req.user.roles,
+          });
+        }
+        return next();
+      } catch (err) {
+        return res.status(401).json({
+          ok: false,
+          error: "Token inválido o expirado",
+          detail: err.message,
+        });
+      }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // MODO LAB (OIDC y platform auth desactivados): sin validación
     // ──────────────────────────────────────────────────────────────────────
     if (!OIDC_ENABLED) {
       req.user = {
@@ -192,7 +234,6 @@ export function requireAuth(minRole = null) {
       return next();
     }
 
-    const authHeader = (req.headers["authorization"] ?? "").trim();
     const apiKeyHdr  = (req.headers["x-api-key"]     ?? "").trim();
 
     // ──────────────────────────────────────────────────────────────────────

@@ -47,6 +47,12 @@ services:
       # Sin data-lake: TRINO_URL vacío → las consultas de detección en vivo
       # devuelven 0 filas (stub). Ver README → "Conectar datos reales".
       TRINO_URL: ""
+      NOC_AGENT_TOKEN: ${NOC_AGENT_TOKEN:-}
+      PLATFORM_AUTH_ENABLED: ${PLATFORM_AUTH_ENABLED:-true}
+      AGENT_JWT_SECRET: ${AGENT_JWT_SECRET:-obserlgcr-agent-dev-secret-change-me}
+      NOC_WATCHER_INTERVAL_MS: ${NOC_WATCHER_INTERVAL_MS:-30000}
+      CRON_SECRET: ${CRON_SECRET:-}
+      DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:8080}
     ports:
       - "${API_PORT:-8787}:8787"
 
@@ -57,6 +63,7 @@ services:
         VITE_API_BASE_URL: ""
         VITE_OIDC_AUTHORITY: ""
         VITE_TENANT_NAME: "obserLGCR"
+        VITE_PLATFORM_AUTH: "true"
     image: obserlgcr-dashboard:local
     container_name: obserlgcr-dashboard
     restart: unless-stopped

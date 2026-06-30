@@ -19,8 +19,8 @@ export function RouteError() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center p-6">
-      <Card className="max-w-md border-destructive/40">
+    <div className="obser-shell flex min-h-dvh items-center justify-center p-6">
+      <Card className="ut-card max-w-md border-destructive/40 shadow-none">
         <CardHeader>
           <CardTitle>Algo salió mal</CardTitle>
         </CardHeader>

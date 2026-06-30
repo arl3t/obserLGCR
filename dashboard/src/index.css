@@ -148,80 +148,78 @@
   }
   .dark {
     color-scheme: dark;
-    --color-border: oklch(0.28 0.02 260);
-    --color-input: oklch(0.28 0.02 260);
-    --color-ring: oklch(0.62 0.19 145);
-    --color-background: oklch(0.12 0.02 260);
-    --color-foreground: oklch(0.96 0.01 260);
-    --color-card: oklch(0.16 0.025 260);
-    --color-card-foreground: oklch(0.96 0.01 260);
-    --color-muted: oklch(0.22 0.02 260);
-    --color-muted-foreground: oklch(0.72 0.02 260);
-    --color-accent: oklch(0.22 0.04 260);
-    --color-accent-foreground: oklch(0.96 0.01 260);
-    --color-primary: oklch(0.72 0.19 145);
-    --color-primary-foreground: oklch(0.12 0.02 260);
-    --color-destructive: oklch(0.55 0.22 25);
-    --color-destructive-foreground: oklch(0.98 0.01 260);
-    --color-sidebar: oklch(0.1 0.025 260);
-    --color-sidebar-border: oklch(0.2 0.02 260);
-    --color-chart-1: oklch(0.72 0.19 145);
-    --color-chart-2: oklch(0.65 0.18 250);
-    --color-chart-3: oklch(0.75 0.16 40);
-    --color-chart-4: oklch(0.6 0.2 310);
-    /* Case Management — paleta dark (cyberpunk legible sobre fondo oscuro). */
-    --cm-bg: #0a0a0a;
-    --cm-card: #111111;
-    --cm-border: #1e3a47;
+    /* Uptime monitor — paleta global WCAG AA */
+    --color-border: #3d4a5c;
+    --color-input: #2a3444;
+    --color-ring: #60a5fa;
+    --color-background: #0a0e14;
+    --color-foreground: #f5f5f5;
+    --color-card: #161c26;
+    --color-card-foreground: #f5f5f5;
+    --color-muted: #1c2433;
+    --color-muted-foreground: #b8c0cc;
+    --color-accent: #1c2433;
+    --color-accent-foreground: #f5f5f5;
+    --color-primary: #60a5fa;
+    --color-primary-foreground: #0a0e14;
+    --color-destructive: #f87171;
+    --color-destructive-foreground: #0a0e14;
+    --color-sidebar: #0a0e14;
+    --color-sidebar-border: #3d4a5c;
+    --color-chart-1: #60a5fa;
+    --color-chart-2: #4ade80;
+    --color-chart-3: #ffb300;
+    --color-chart-4: #f87171;
+    /* Case Management — alineado con uptime */
+    --cm-bg: #0a0e14;
+    --cm-card: #161c26;
+    --cm-border: #3d4a5c;
     --cm-text: #f5f5f5;
-    --cm-text-dim: #94a3b8;
-    --cm-red: #ef4444;
-    --cm-orange: #f59e0b;
-    --cm-cyan: #22d3ee;
-    --cm-green: #22c55e;
-    --cm-blue: #3b82f6;
+    --cm-text-dim: #b8c0cc;
+    --cm-red: #f87171;
+    --cm-orange: #ffb300;
+    --cm-cyan: #60a5fa;
+    --cm-green: #4ade80;
+    --cm-blue: #60a5fa;
     --cm-purple: #a78bfa;
-    --cm-info: #22d3ee;
-    --cm-neutral: #a78bfa;
+    --cm-info: #60a5fa;
+    --cm-neutral: #9aa3b2;
 
-    /* Paleta semántica extendida — dark theme.
-     * Para fondos oscuros usamos sólidos algo más claros (400-500 range) y
-     * fondos suaves se reemplazan por mismo color a baja opacidad (color-mix
-     * con transparent). Bordes 3-niveles también ajustados a slate oscuro. */
-    --accent-hover:    #60a5fa;            /* blue-400 */
-    --accent-bg:       color-mix(in srgb, #3b82f6 18%, transparent);
+    --accent:           #60a5fa;
+    --accent-hover:     #93c5fd;
+    --accent-bg:        color-mix(in srgb, #60a5fa 14%, transparent);
 
-    --success:         #22c55e;
-    --success-hover:   #4ade80;            /* green-400 */
-    --success-bg:      color-mix(in srgb, #22c55e 18%, transparent);
+    --success:         #4ade80;
+    --success-hover:   #86efac;
+    --success-bg:      color-mix(in srgb, #4ade80 14%, transparent);
 
-    --warning:         #f97316;            /* orange-500 */
-    --warning-hover:   #fb923c;            /* orange-400 */
-    --warning-bg:      color-mix(in srgb, #f97316 18%, transparent);
+    --warning:         #ffb300;
+    --warning-hover:   #ffc233;
+    --warning-bg:      color-mix(in srgb, #ffb300 12%, transparent);
 
-    --analysis:        #f59e0b;            /* amber-500 */
-    --analysis-hover:  #fbbf24;            /* amber-400 */
-    --analysis-bg:     color-mix(in srgb, #f59e0b 18%, transparent);
+    --analysis:        #ffb300;
+    --analysis-hover:  #ffc233;
+    --analysis-bg:     color-mix(in srgb, #ffb300 12%, transparent);
 
-    --critical:        #ef4444;
-    --critical-hover:  #f87171;            /* red-400 */
-    --critical-bg:     color-mix(in srgb, #ef4444 18%, transparent);
+    --critical:        #f87171;
+    --critical-hover:  #fca5a5;
+    --critical-bg:     color-mix(in srgb, #f87171 14%, transparent);
 
-    --info:            #22d3ee;
-    --info-hover:      #67e8f9;            /* cyan-300 */
-    --info-bg:         color-mix(in srgb, #22d3ee 18%, transparent);
+    --info:            #60a5fa;
+    --info-hover:      #93c5fd;
+    --info-bg:         color-mix(in srgb, #60a5fa 14%, transparent);
 
-    --neutral:         #a78bfa;
-    --neutral-hover:   #c4b5fd;            /* violet-300 */
-    --neutral-bg:      color-mix(in srgb, #a78bfa 18%, transparent);
+    --neutral:         #9aa3b2;
+    --neutral-hover:   #b8c0cc;
+    --neutral-bg:      color-mix(in srgb, #9aa3b2 12%, transparent);
 
-    --border-subtle:   #1a1a1a;
-    --border-strong:   #334155;            /* slate-700 */
-    --text-disabled:   #475569;            /* slate-600 */
-    --bg-disabled:     #1a1a1a;
-    --row-hover:       color-mix(in srgb, #f5f5f5 6%, transparent);
-    --selection:       color-mix(in srgb, #3b82f6 32%, transparent);
-    --focus-ring:      color-mix(in srgb, #3b82f6 50%, transparent);
+    --border-subtle:   #2a3444;
+    --border-strong:   #3d4a5c;
+    --text-disabled:   #6b7280;
+    --bg-disabled:     #1c2433;
+    --row-hover:       color-mix(in srgb, #60a5fa 6%, transparent);
+    --selection:       color-mix(in srgb, #60a5fa 22%, transparent);
+    --focus-ring:      color-mix(in srgb, #60a5fa 45%, transparent);
   }
 
   /* ── Nexus Dark — LegacyHunt brand theme ────────────────────────────────── */

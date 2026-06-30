@@ -1,9 +1,12 @@
 /**
- * Origen del legacyhunt-api para axios desde el navegador.
- * - `VITE_API_BASE_URL` (sin barra final) si está definido — p. ej. build detrás de nginx u otro host.
- * - Dev (`import.meta.env.DEV`): cadena vacía → `/api/*` al origen del dev server; Vite proxea a :8787.
- * - Prod sin env y host de lab (localhost, 127.0.0.1, RFC1918): asume API en el mismo host puerto **8787**.
- *   Así `vite preview`, `npx serve dist` u otro estático no devuelven index.html en `/api/*` (error “HTML en lugar de JSON”).
+ * Origen del API para axios desde el navegador.
+ *
+ * - `VITE_API_BASE_URL` definido → URL absoluta del API.
+ * - Dev (`import.meta.env.DEV`) → "" (Vite proxea /api a :8787).
+ * - Prod con VITE_API_BASE_URL vacío → "" (rutas relativas /api/*).
+ *   Docker/nginx y reverse proxies en el mismo host reenvían /api al backend.
+ * - Excepción: `vite preview` / serve estático en puertos de dev sin proxy
+ *   (5173, 4173…) → API directo en :8787 del mismo host.
  */
 function isLikelyLabHostname(hostname: string): boolean {
   if (hostname === "localhost" || hostname === "127.0.0.1") return true;
@@ -15,10 +18,11 @@ function isLikelyLabHostname(hostname: string): boolean {
   return false;
 }
 
-/** Puertos típicos de preview/serve del front (API suele seguir en :8787). */
-function isStaticPreviewPort(port: string): boolean {
-  return new Set(["4173", "5173", "5174", "4174", "3000", "5000", "8080", "5500"]).has(port);
-}
+/** Puertos donde el front se sirve SIN proxy /api integrado (preview Vite, serve estático). */
+const DIRECT_API_PREVIEW_PORTS = new Set(["4173", "5173", "5174", "4174", "3000", "5000", "5500"]);
+
+/** Puertos donde /api suele ir por reverse proxy en el mismo origen (Docker nginx, prod). */
+const PROXY_API_PORTS = new Set(["80", "443", "8080", "8443"]);
 
 export function getLegacyHuntApiBase(): string {
   const env = (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/$/, "");
@@ -30,16 +34,23 @@ export function getLegacyHuntApiBase(): string {
     const rawPort = window.location.port;
     const effectivePort =
       rawPort || (window.location.protocol === "https:" ? "443" : "80");
-    const proto = window.location.protocol === "https:" ? "https:" : "http:";
 
+    // Docker (:8080) y nginx (:80/:443): usar /api relativo en el mismo host.
+    if (PROXY_API_PORTS.has(effectivePort) || PROXY_API_PORTS.has(rawPort)) {
+      return "";
+    }
+
+    // Preview estático sin proxy: API directo en :8787 (mismo host lab).
     if (
       h &&
-      (isLikelyLabHostname(h) ||
-        isStaticPreviewPort(effectivePort) ||
-        isStaticPreviewPort(rawPort))
+      isLikelyLabHostname(h) &&
+      (DIRECT_API_PREVIEW_PORTS.has(effectivePort) ||
+        DIRECT_API_PREVIEW_PORTS.has(rawPort))
     ) {
+      const proto = window.location.protocol === "https:" ? "https:" : "http:";
       return `${proto}//${h}:8787`.replace(/\/$/, "");
     }
   }
+
   return "";
 }

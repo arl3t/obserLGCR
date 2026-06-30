@@ -4,6 +4,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from "axios";
 import { tokenStore } from "@/auth/token-store";
+import { PLATFORM_AUTH_ENABLED } from "@/auth/auth-config";
 import { getLegacyHuntApiBase } from "@/lib/api-origin";
 
 export const api = axios.create({
@@ -41,6 +42,17 @@ api.interceptors.response.use(
   (res) => res,
   (error: AxiosError) => {
     const status = error.response?.status;
+    if (status === 401 && PLATFORM_AUTH_ENABLED) {
+      const url = error.config?.url ?? "";
+      if (!url.includes("/api/auth/login")) {
+        tokenStore.clear();
+        localStorage.removeItem("obserlgcr_platform_token");
+        localStorage.removeItem("obserlgcr_platform_user");
+        if (!window.location.pathname.startsWith("/login")) {
+          window.location.href = `/login?returnTo=${encodeURIComponent(window.location.pathname)}`;
+        }
+      }
+    }
     if (status && status >= 500) {
       Sentry.captureException(error, {
         extra: {

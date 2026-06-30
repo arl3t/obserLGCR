@@ -5,21 +5,21 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 import { Toaster } from "sonner";
-import { AuthProvider } from "@/auth/AuthProvider";
 import { initSentry } from "@/lib/sentry";
 import { reportWebVitals } from "@/lib/web-vitals";
 import { router } from "@/router";
 import { queryClient } from "@/store/query-client";
 import "./index.css";
+import "./styles/obserlgcr.css";
+import "./styles/obser-uptime.css";
 
 initSentry();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem themes={["light", "dark", "nexus-dark", "cyber-tactical"]}>
-      <AuthProvider>
-        <QueryClientProvider client={queryClient}>
-          <Sentry.ErrorBoundary
+      <QueryClientProvider client={queryClient}>
+        <Sentry.ErrorBoundary
             fallback={
               <div className="flex min-h-dvh flex-col items-center justify-center gap-4 p-6">
                 <p className="text-destructive">Error en la aplicación</p>
@@ -42,7 +42,6 @@ createRoot(document.getElementById("root")!).render(
             />
           </Sentry.ErrorBoundary>
         </QueryClientProvider>
-      </AuthProvider>
     </ThemeProvider>
   </StrictMode>,
 );

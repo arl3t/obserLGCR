@@ -4,16 +4,15 @@
  * Datos 100% desde el backend real vía useCaseManagement.
  */
 
-import React, { Fragment, Suspense, lazy, memo, useCallback, useState, useMemo, useEffect, useRef } from "react";
+import React, { Fragment, memo, useCallback, useState, useMemo, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   RefreshCw, AlertCircle, Shield, Clock, CheckCircle,
-  Search, ChevronLeft, ChevronRight, Microscope,
+  Search, ChevronLeft, ChevronRight,
   ChevronUp, ChevronDown, Server, User,
   Globe, Link as LinkIcon, Hash, Mail, FileText, KeyRound,
-  Keyboard, ShieldCheck, MoreHorizontal, Wrench, Layers, X, Crosshair, FileDown,
+  Keyboard, ShieldCheck, MoreHorizontal, Wrench, Layers, X, FileDown,
   type LucideIcon,
 } from "lucide-react";
 import { api } from "@/api/client";
@@ -26,59 +25,6 @@ import { ProfileSelector }         from "./ProfileSelector";
 import { ExecutiveReportMenu }     from "./ExecutiveReportMenu";
 import { BulkCloseAssistant }      from "./BulkCloseAssistant";
 import { exportSelectedCasesReportPdf } from "@/lib/cases-report-pdf";
-// Code-split: CaseInvestigationView + sus paneles y modales (~250kB gzipped
-// juntos) se cargan sólo cuando el operador abre "Investigar".
-// Si el chunk 404s (stale deployment: HTML nuevo pero browser cacheó chunks
-// viejos), recarga la página UNA vez via sessionStorage para evitar loops.
-const CaseInvestigationView = lazy(() =>
-  import("./CaseInvestigationView")
-    .then((m) => ({ default: m.CaseInvestigationView }))
-    .catch((err) => {
-      if (!sessionStorage.getItem("__inv_chunk_reload")) {
-        sessionStorage.setItem("__inv_chunk_reload", "1");
-        window.location.reload();
-      }
-      throw err;
-    })
-);
-
-// Error boundary local para el chunk lazy de CaseInvestigationView.
-// Si el chunk falla (stale deployment, 404), muestra un mensaje dentro del
-// overlay en lugar de propagar el error al RouteError de la página completa.
-class InvestigationChunkBoundary extends React.Component<
-  { onClose: () => void; children: React.ReactNode },
-  { failed: boolean }
-> {
-  state = { failed: false };
-  static getDerivedStateFromError() { return { failed: true }; }
-  render() {
-    if (!this.state.failed) return this.props.children;
-    return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 16, padding: 32, color: "#888" }}>
-        <AlertCircle size={32} style={{ color: "#f87171" }} />
-        <div style={{ fontSize: 15, fontWeight: 600, color: "#e5e5e5" }}>No se pudo cargar la vista de investigación</div>
-        <div style={{ fontSize: 13, textAlign: "center", maxWidth: 380 }}>
-          El módulo no está disponible en el servidor. Esto ocurre tras un redespliegue reciente.
-          Recargá la página para obtener la versión actualizada.
-        </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <button
-            onClick={() => window.location.reload()}
-            style={{ padding: "8px 16px", borderRadius: 6, background: "#3b82f6", color: "#fff", border: "none", cursor: "pointer", fontSize: 13 }}
-          >
-            Recargar página
-          </button>
-          <button
-            onClick={this.props.onClose}
-            style={{ padding: "8px 16px", borderRadius: 6, background: "transparent", color: "#888", border: "1px solid #444", cursor: "pointer", fontSize: 13 }}
-          >
-            Cerrar
-          </button>
-        </div>
-      </div>
-    );
-  }
-}
 import { useStatusDist }           from "./useCaseInvestigation";
 import { getTriggeringProfiles, loadProfiles } from "./scoringProfiles";
 import type { SocCase, Severity, CaseStatus, DashboardKpis } from "./types";
@@ -181,27 +127,6 @@ const SEARCH_HINTS = [
   "ej: score:>=70 age:<7d (alto recientes)",
   "ej: score:50-80 op:me (mis pendientes medios)",
 ];
-
-// ── Sensor labels hook ────────────────────────────────────────────────────────
-
-/** Objeto vacío estable — evita que el fallback `data ?? {}` rompa memoización
- *  de filas al generar una identidad nueva en cada render. */
-const EMPTY_LABELS: Record<string, string> = Object.freeze({}) as Record<string, string>;
-
-/** Carga el mapeo sensor_ip/host → nombre amigable desde el servidor.
- *  Datos casi estáticos: staleTime 30 min; refetch sólo al montar si venció. */
-function useSensorLabels(): Record<string, string> {
-  const { data } = useQuery({
-    queryKey: ["sensor-labels"],
-    queryFn: async () => {
-      const { data } = await api.get<{ ok: boolean; labels?: Record<string, string> }>("/api/sensors/labels");
-      return data?.ok && data.labels ? data.labels : EMPTY_LABELS;
-    },
-    staleTime:            30 * 60_000,
-    refetchOnWindowFocus: false,
-  });
-  return data ?? EMPTY_LABELS;
-}
 
 // La salud del sistema (SM activo, caché Trino, automatización) vive ahora en
 // el botón "Sistema" de la barra superior — ver components/layout/SystemHealthButton.
@@ -546,27 +471,8 @@ function iocTypeIcon(iocType: string | null | undefined): LucideIcon {
   return IOC_TYPE_ICON[k] ?? Server;
 }
 
-// ── Catálogo de tácticas MITRE (espejo de backend incidents.mjs TACTIC_LABEL) ──
-// Usado por la agrupación "por táctica" para mostrar etiquetas legibles.
-const TACTIC_LABEL: Record<string, string> = {
-  TA0043: "Reconocimiento",
-  TA0042: "Desarrollo de recursos",
-  TA0001: "Acceso inicial",
-  TA0002: "Ejecución",
-  TA0003: "Persistencia",
-  TA0004: "Escalada de privilegios",
-  TA0005: "Evasión de defensas",
-  TA0006: "Acceso a credenciales",
-  TA0007: "Descubrimiento",
-  TA0008: "Movimiento lateral",
-  TA0009: "Recolección",
-  TA0011: "Comando y control (C2)",
-  TA0010: "Exfiltración",
-  TA0040: "Impacto",
-};
-
-/** Modos de agrupación de la cola de casos. */
-type GroupMode = "none" | "ioc" | "tactic";
+/** Modos de agrupación de la cola de incidentes NOC. */
+type GroupMode = "none" | "activo";
 
 // ── HeaderMenu — botón con dropdown para colapsar acciones del header ──────────
 // Despeja el header (de 11 botones a ~6) agrupando toggles de paneles y acciones
@@ -738,8 +644,7 @@ export function CaseManagementDashboard() {
   const [createdAtMax, setCreatedAtMax]       = useState<string>(persisted.createdAtMax ?? "");
   // A4 — Toggle "Agrupar por IOC": cuando está ON, filas con el mismo srcIp
   // (ioc_value) colapsan en una sola entrada con badge `Nx`. Click expande.
-  // Agrupación de la cola: "none" (plano) · "ioc" (mismo srcIp) · "tactic"
-  // (misma táctica MITRE). Reusa la misma máquina de render de grupos colapsables.
+  // Agrupación de la cola: "none" (plano) · "activo" (mismo hostname/IP).
   const [groupMode, setGroupMode]         = useState<GroupMode>("none");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
@@ -758,7 +663,6 @@ export function CaseManagementDashboard() {
       scoreMin, scoreMax, createdAtMin, createdAtMax, classFilter]);
   const [selectedCase,      setSelectedCase]      = useState<SocCase | null>(null);
   const [adoptingCase,      setAdoptingCase]      = useState<SocCase | null>(null);
-  const [investigatingId,   setInvestigatingId]   = useState<string | null>(null);
   /** Hotkeys: índice de fila enfocada en displayCases. -1 = ninguna. */
   const [focusIdx,          setFocusIdx]          = useState<number>(-1);
   const [showHotkeysHelp,   setShowHotkeysHelp]   = useState<boolean>(false);
@@ -769,19 +673,8 @@ export function CaseManagementDashboard() {
   const [bulkBusy,          setBulkBusy]          = useState<boolean>(false);
   // Operador destino del selector "Asignar a…" en la barra de acciones masivas.
   const [bulkAssignTarget,  setBulkAssignTarget]  = useState<string>("");
-  // Deep-link desde /triage (u otros flujos): ?investigate=<caseId> abre la
-  // vista de investigación directamente al montar. Limpiamos el query param
-  // tras aplicarlo para que un F5 no reabra el modal si el operador navegó.
+  // Deep-link: ?case=<id> abre el panel lateral de detalle al montar.
   const [searchParams, setSearchParams] = useSearchParams();
-  useEffect(() => {
-    const id = searchParams.get("investigate");
-    if (id && !investigatingId) {
-      setInvestigatingId(id);
-      const next = new URLSearchParams(searchParams);
-      next.delete("investigate");
-      setSearchParams(next, { replace: true });
-    }
-  }, [searchParams, investigatingId, setSearchParams]);
   // Deep-link desde /leader: ?openHandover=true → abrir el panel al montar.
   useEffect(() => {
     if (searchParams.get("openHandover") === "true") {
@@ -838,10 +731,6 @@ export function CaseManagementDashboard() {
     next.delete("preset");
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
-  // Caso desde el que se entró a investigación. Al cerrar la vista, el detail
-  // sheet de este caso se reabre para que el operador pueda seguir trabajándolo
-  // sin tener que volver a localizarlo en el listado.
-  const [lastInvestigatedCase, setLastInvestigatedCase] = useState<SocCase | null>(null);
   const { preferredUsername } = useAuth();
   // P1 #13: identidad resuelta desde la sesión (JWT → soc_operators.id). Es la
   // fuente de verdad del CI; siembra localStorage para que los flujos que usan
@@ -1087,8 +976,6 @@ export function CaseManagementDashboard() {
   }
 
   const profiles = useMemo(() => loadProfiles(), []);
-  const sensorLabels = useSensorLabels();
-
   const {
     cases,
     total,
@@ -1126,6 +1013,17 @@ export function CaseManagementDashboard() {
     incidentClass: classFilter !== "ALL" ? classFilter : undefined,
   });
 
+  useEffect(() => {
+    const id = searchParams.get("case") ?? searchParams.get("investigate");
+    if (!id || cases.length === 0) return;
+    const found = cases.find((c) => c.id === id);
+    if (found) setSelectedCase(found);
+    const next = new URLSearchParams(searchParams);
+    next.delete("case");
+    next.delete("investigate");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, cases, setSearchParams]);
+
   // Real-time: refetch cuando otro operador cambia un caso
   useCaseUpdates(useCallback(() => { void refetch(); }, [refetch]));
 
@@ -1155,24 +1053,15 @@ export function CaseManagementDashboard() {
     });
   }, [cases, sort]);
 
-  // A4 — Lista renderizada con soporte opcional de agrupamiento (IOC o táctica
-  // MITRE). Cuando `groupMode` ≠ "none", colapsa filas con la misma clave en una
-  // única "fila líder" (la de severity más alta / creada primera) decorada con un
-  // contador. Click sobre la fila expande el grupo mostrando las hijas.
+  // A4 — Lista renderizada con agrupamiento opcional por activo (hostname/IP).
   type RenderItem =
     | { kind: "single"; case: SocCase }
     | { kind: "group";  groupKey: string; label: string; leader: SocCase; members: SocCase[]; expanded: boolean };
-  // Clave + etiqueta de grupo según el modo activo.
   const groupKeyOf = useCallback((c: SocCase): { key: string; label: string } => {
-    if (groupMode === "tactic") {
-      const tid = c.mitre?.tacticId || "";
-      if (!tid) return { key: "__no_tactic__", label: "Sin táctica MITRE" };
-      const name = c.mitre?.tacticName || TACTIC_LABEL[tid] || tid;
-      return { key: tid, label: `${name} · ${tid}` };
-    }
-    // modo "ioc"
-    return { key: c.srcIp || c.id, label: c.srcIp || "—" };
-  }, [groupMode]);
+    const key = c.hostname || c.srcIp || c.id;
+    const label = c.hostname || c.srcIp || "—";
+    return { key, label };
+  }, []);
   const renderedCases = useMemo<RenderItem[]>(() => {
     if (groupMode === "none") return displayCases.map((c) => ({ kind: "single", case: c }));
     const groups = new Map<string, { label: string; members: SocCase[] }>();
@@ -1187,7 +1076,7 @@ export function CaseManagementDashboard() {
       // Agrupar por táctica: incluso un único caso se muestra bajo su cabecera
       // (la táctica es una dimensión de clasificación, no de deduplicación).
       // Agrupar por IOC: un caso solo se renderiza plano (no es un "duplicado").
-      if (g.members.length === 1 && groupMode === "ioc") {
+      if (g.members.length === 1 && groupMode === "activo") {
         out.push({ kind: "single", case: g.members[0] });
       } else {
         out.push({
@@ -1518,30 +1407,21 @@ export function CaseManagementDashboard() {
       setAdoptingCase(c);
     }
   }, [adoptCase]);
-  const handleInvestigateCase = useCallback((c: SocCase) => {
-    setLastInvestigatedCase(c);
-    setInvestigatingId(c.id);
-  }, []);
 
   // Hotkeys globales (mismo patrón que /triage):
   //   j / ArrowDown → siguiente fila
   //   k / ArrowUp   → anterior
   //   Enter         → abre detail sheet de la fila enfocada
   //   a             → adopta la fila enfocada (1-click)
-  //   i             → investigar la fila enfocada (open full view)
   //   ?             → muestra/oculta ayuda
   //   Esc           → cierra ayuda
-  // Ignoramos cuando el operador tipea en inputs/textareas/contenteditable
-  // o cuando hay modales abiertos (detail sheet, adopción, investigation)
-  // — esos componentes tienen sus propios shortcuts.
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
       const isEditable = tag === "input" || tag === "textarea" || tag === "select"
         || (e.target as HTMLElement | null)?.isContentEditable;
       if (isEditable) return;
-      // No interceptar si hay overlays activos
-      if (selectedCase || adoptingCase || investigatingId) return;
+      if (selectedCase || adoptingCase) return;
 
       const len = displayCases.length;
       const c = focusIdx >= 0 && focusIdx < len ? displayCases[focusIdx] : null;
@@ -1568,10 +1448,6 @@ export function CaseManagementDashboard() {
         case "A":
           if (c) { e.preventDefault(); void handleAdoptCase(c); }
           break;
-        case "i":
-        case "I":
-          if (c) { e.preventDefault(); handleInvestigateCase(c); }
-          break;
         case "?":
           e.preventDefault();
           setShowHotkeysHelp(v => !v);
@@ -1583,8 +1459,8 @@ export function CaseManagementDashboard() {
     }
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [displayCases, focusIdx, selectedCase, adoptingCase, investigatingId, showHotkeysHelp,
-      handleSelectCase, handleAdoptCase, handleInvestigateCase]);
+  }, [displayCases, focusIdx, selectedCase, adoptingCase, showHotkeysHelp,
+      handleSelectCase, handleAdoptCase]);
 
   // Scroll-into-view de la fila enfocada al cambiar focusIdx.
   useEffect(() => {
@@ -2020,7 +1896,7 @@ export function CaseManagementDashboard() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Shield size={20} color={C.cyan} />
-          <span style={{ fontSize: 18, fontWeight: 700 }}>Gestión de Casos</span>
+          <span style={{ fontSize: 18, fontWeight: 700 }}>Gestión de Incidentes NOC</span>
           <span style={{ fontSize: 12, color: C.textDim }}>
             {total > 0 && `${total} caso${total !== 1 ? "s" : ""}`}
           </span>
@@ -2893,7 +2769,7 @@ export function CaseManagementDashboard() {
               cases={displayCases}
               isLoading={isLoading}
               myOperatorCi={operatorCi}
-              onInvestigate={handleInvestigateCase}
+              onSelect={handleSelectCase}
               onAdopt={handleAdoptCase}
             />
           ) : (
@@ -2909,9 +2785,7 @@ export function CaseManagementDashboard() {
               }} />
             )}
 
-            {/* A4 — Toolbar de la tabla: selector de agrupación.
-                "IOC" colapsa filas con el mismo srcIp; "Táctica" agrupa por
-                táctica MITRE. La fila líder lleva badge Nx; expandible al click. */}
+            {/* Toolbar de agrupación por activo */}
             <div style={{
               display: "flex", alignItems: "center", gap: 10,
               padding: "6px 4px 8px", fontSize: 11, color: C.textDim,
@@ -2920,8 +2794,7 @@ export function CaseManagementDashboard() {
               <div style={{ display: "inline-flex", border: `1px solid ${C.border}`, borderRadius: 6, overflow: "hidden" }}>
                 {([
                   ["none",   "Ninguno"],
-                  ["ioc",    "IOC"],
-                  ["tactic", "Táctica MITRE"],
+                  ["activo", "Activo"],
                 ] as Array<[GroupMode, string]>).map(([mode, label], i) => {
                   const active = groupMode === mode;
                   return (
@@ -2929,8 +2802,7 @@ export function CaseManagementDashboard() {
                       key={mode}
                       onClick={() => { setGroupMode(mode); setExpandedGroups(new Set()); }}
                       title={
-                        mode === "tactic" ? "Agrupar casos por táctica MITRE (TA00xx)"
-                        : mode === "ioc"  ? "Agrupar casos con el mismo IOC/origen"
+                        mode === "activo" ? "Agrupar incidentes del mismo activo"
                         : "Sin agrupar (lista plana)"
                       }
                       style={{
@@ -2941,8 +2813,7 @@ export function CaseManagementDashboard() {
                         borderLeft: i > 0 ? `1px solid ${C.border}` : "none",
                       }}
                     >
-                      {mode === "tactic" && <Crosshair size={11} />}
-                      {mode === "ioc" && <Layers size={11} />}
+                      {mode === "activo" && <Layers size={11} />}
                       {label}
                     </button>
                   );
@@ -2968,11 +2839,9 @@ export function CaseManagementDashboard() {
                 style={{ flexShrink: 0, width: 15, height: 15, cursor: "pointer", accentColor: C.cyan }}
               />
               <SortHeader label="# CASO"    col="id"       sort={sort} sortDir={sortDir} onSort={applySort} style={{ width: 72 }} />
-              <SortHeader label="SENSOR"    col="sensor"   sort={sort} sortDir={sortDir} onSort={applySort} style={{ width: 120 }} />
-              <SortHeader label="IOC / FUENTE" col="ioc"  sort={sort} sortDir={sortDir} onSort={applySort} style={{ flex: 2 }} />
+              <SortHeader label="ACTIVO / ORIGEN" col="ioc"  sort={sort} sortDir={sortDir} onSort={applySort} style={{ flex: 2 }} />
               <SortHeader label="SEVERITY"  col="severity" sort={sort} sortDir={sortDir} onSort={applySort} style={{ width: 80 }} />
               <SortHeader label="ESTADO"    col="status"   sort={sort} sortDir={sortDir} onSort={applySort} style={{ width: 110 }} />
-              <SortHeader label="SCORE"     col="score"    sort={sort} sortDir={sortDir} onSort={applySort} style={{ width: 60, textAlign: "right" }} />
               <SortHeader label="DETECTADO" col="detectado" sort={sort} sortDir={sortDir} onSort={applySort} style={{ width: 120, textAlign: "right" }} />
               <SortHeader label="CREADO"    col="creado"   sort={sort} sortDir={sortDir} onSort={applySort} style={{ width: 110, textAlign: "right" }} />
               <SortHeader label="SLA"       col="sla"      sort={sort} sortDir={sortDir} onSort={applySort} style={{ width: 80, textAlign: "right" }} />
@@ -3008,12 +2877,10 @@ export function CaseManagementDashboard() {
                       key={item.case.id}
                       case={item.case}
                       profiles={profiles}
-                      sensorLabels={sensorLabels}
                       myOperatorCi={operatorCi}
                       operatorNames={operatorNames}
                       onSelect={handleSelectCase}
                       onAdopt={handleAdoptCase}
-                      onInvestigate={handleInvestigateCase}
                       onChanged={handleCaseChanged}
                       isFocused={item.case.id === focusedId}
                       selected={selectedIds.has(item.case.id)}
@@ -3023,7 +2890,6 @@ export function CaseManagementDashboard() {
                 }
                 // kind === "group": header clickeable + (opcionalmente) hijas expandidas.
                 const groupKey = item.groupKey;
-                const isTactic = groupMode === "tactic";
                 return (
                   <Fragment key={`g-${groupKey}`}>
                     <div
@@ -3035,7 +2901,7 @@ export function CaseManagementDashboard() {
                         borderBottom: `1px solid ${C.border}`,
                         color: C.textDim,
                       }}
-                      title={`${item.members.length} caso(s) ${isTactic ? "de esta táctica MITRE" : "con el mismo IOC"} — click para ${item.expanded ? "colapsar" : "expandir"}`}
+                      title={`${item.members.length} incidente(s) del mismo activo — click para ${item.expanded ? "colapsar" : "expandir"}`}
                     >
                       <span style={{
                         fontSize: 10, fontWeight: 700, letterSpacing: "0.05em",
@@ -3045,9 +2911,8 @@ export function CaseManagementDashboard() {
                       }}>
                         {item.expanded ? "▼" : "▶"} {item.members.length}×
                       </span>
-                      {isTactic && <Crosshair size={12} style={{ color: C.cyan, flexShrink: 0 }} />}
                       <span style={{
-                        fontFamily: isTactic ? "system-ui, sans-serif" : "ui-monospace, monospace",
+                        fontFamily: "ui-monospace, monospace",
                         color: C.text, fontWeight: 600,
                       }}>
                         {item.label}
@@ -3072,12 +2937,10 @@ export function CaseManagementDashboard() {
                           key={c.id}
                           case={c}
                           profiles={profiles}
-                          sensorLabels={sensorLabels}
                           myOperatorCi={operatorCi}
                           operatorNames={operatorNames}
                           onSelect={handleSelectCase}
                           onAdopt={handleAdoptCase}
-                          onInvestigate={handleInvestigateCase}
                           onChanged={handleCaseChanged}
                           isFocused={c.id === focusedId}
                           selected={selectedIds.has(c.id)}
@@ -3117,39 +2980,6 @@ export function CaseManagementDashboard() {
         </>
       )}
 
-      {/* DFIR Investigation panel — full-page overlay */}
-      {investigatingId && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 100,
-          background: C.bg, overflow: "auto",
-          display: "flex", flexDirection: "column",
-        }}>
-          <InvestigationChunkBoundary onClose={() => setInvestigatingId(null)}>
-            <Suspense fallback={
-              <div style={{ padding: 24, color: C.textDim, display: "flex", alignItems: "center", gap: 8 }}>
-                <RefreshCw size={14} className="animate-spin" />
-                <span>Cargando vista de investigación…</span>
-              </div>
-            }>
-              <CaseInvestigationView
-                caseId={investigatingId}
-                operatorCi={operatorCi}
-                onClose={() => {
-                  if (lastInvestigatedCase) {
-                    // Reabrir el detail sheet con la versión más fresca del caso
-                    // (puede haber cambiado status/score durante la investigación).
-                    const updated = cases.find((c) => c.id === lastInvestigatedCase.id) ?? lastInvestigatedCase;
-                    setSelectedCase(updated);
-                    setLastInvestigatedCase(null);
-                  }
-                  setInvestigatingId(null);
-                }}
-              />
-            </Suspense>
-          </InvestigationChunkBoundary>
-        </div>
-      )}
-
       {/* Case detail sheet */}
       {selectedCase && (
         <CaseDetailSheet
@@ -3158,7 +2988,6 @@ export function CaseManagementDashboard() {
           onAdopt={(ci, force) => adoptCase(selectedCase.id, ci, force ?? false)}
           onChangeStatus={(status, reason, ci, classification) => changeStatus(selectedCase.id, status, reason, ci, classification)}
           onNotifySlack={(reason) => notifySlack(selectedCase.id, reason)}
-          onInvestigate={(id) => { setLastInvestigatedCase(selectedCase); setSelectedCase(null); setInvestigatingId(id); }}
           onEscalate={(level, escalatedTo, reason, ci) =>
             escalateCase(selectedCase.id, level, escalatedTo, reason, ci)
           }
@@ -3210,7 +3039,6 @@ export function CaseManagementDashboard() {
                   ["k  /  ↑",  "Caso anterior"],
                   ["Enter",    "Abrir detalle del caso enfocado"],
                   ["a",        "Adoptar caso enfocado"],
-                  ["i",        "Investigar caso enfocado"],
                   ["?",        "Mostrar / ocultar esta ayuda"],
                 ].map(([k, desc]) => (
                   <tr key={k}>
@@ -3430,12 +3258,10 @@ function SortHeader({
 const CaseRow = memo(function CaseRow({
   case: c,
   profiles,
-  sensorLabels,
   myOperatorCi,
   operatorNames,
   onSelect,
   onAdopt,
-  onInvestigate,
   onChanged,
   isFocused = false,
   selected = false,
@@ -3443,7 +3269,6 @@ const CaseRow = memo(function CaseRow({
 }: {
   case: SocCase;
   profiles: ReturnType<typeof loadProfiles>;
-  sensorLabels: Record<string, string>;
   /** CI del operador actual, para marcar las filas adoptadas por él. null si
    *  el operador no configuró aún su CI (lab sin auth, etc.). */
   myOperatorCi: string | null;
@@ -3452,7 +3277,6 @@ const CaseRow = memo(function CaseRow({
   operatorNames: Record<string, string>;
   onSelect:      (c: SocCase) => void;
   onAdopt:       (c: SocCase) => void;
-  onInvestigate: (c: SocCase) => void;
   /** Refresca la cola tras una transición inline de estado. */
   onChanged?:    () => void;
   /** Fila enfocada por teclado (j/k). Acent visual + scroll-into-view. */
@@ -3468,14 +3292,8 @@ const CaseRow = memo(function CaseRow({
   const triggering   = getTriggeringProfiles(c, profiles);
   const isMine       = Boolean(myOperatorCi) && c.operatorCi === myOperatorCi;
 
-  /* Resolver nombre del sensor: se extrae el host del campo source_log
-     sensorKey (devname / agent.ip) → lookup en sensor_registry → label registrada.
-     Fallback: devname/agent.ip en bruto → hostname del agente → sourceLabel del sistema. */
-  const regKey      = c.sensorKey || c.source;
-  const regLabel    = sensorLabels[regKey];
-  const isRegistered = Boolean(regLabel);
-  // Nombre a mostrar: label registrado > sensorKey en bruto > hostname (Wazuh agent) > sourceLabel
-  const sensorName  = regLabel ?? c.sensorKey ?? c.hostname ?? c.sourceLabel ?? c.source;
+  /* Nombre del activo monitoreado (hostname o identificador). */
+  const assetName = c.hostname || c.srcIp || "—";
   const isActionable = triggering.length > 0 && !c.adoptedAt;
 
   const escalated   = isEscalatedCase(c);
@@ -3664,72 +3482,19 @@ const CaseRow = memo(function CaseRow({
       </div>
 
       {/* Sensor */}
-      <div style={{ width: 120, flexShrink: 0, minWidth: 0 }}>
-        <span
-          title={`${c.sourceLabel}${c.sensorKey ? ` · ${c.sensorKey}` : ""}${isRegistered ? ` → ${regLabel}` : " (sin registro)"}`}
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 4,
-            fontSize: 11, color: isRegistered ? C.text : C.textDim,
-            background: isRegistered ? alpha(C.cyan, 5) : alpha(C.orange, 4),
-            border: isRegistered ? `1px solid ${alpha(C.cyan, 12)}` : `1px solid ${alpha(C.orange, 12)}`,
-            borderRadius: 4, padding: "1px 6px",
-            maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          }}
-        >
-          <Server size={9} style={{ flexShrink: 0, color: isRegistered ? alpha(C.cyan, 38) : alpha(C.orange, 38) }} />
-          {sensorName}
-        </span>
-      </div>
-
       <div style={{ flex: 2, minWidth: 0 }}>
         <div style={{ fontFamily: "monospace", fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
           {(() => {
             const Icon = iocTypeIcon(c.iocType);
             return <Icon size={11} style={{ flexShrink: 0, color: C.textDim }} aria-label={c.iocType} />;
           })()}
-          {c.srcIp}
-          {c.isInternal && (
-            <span title="IP interna RFC1918 — sin enriquecimiento externo" style={{
-              fontSize: 9, padding: "1px 5px", borderRadius: 3, fontWeight: 700, flexShrink: 0,
-              background: alpha(C.orange, 8), color: C.orange, border: `1px solid ${alpha(C.orange, 19)}`,
-            }}>RFC1918</span>
-          )}
+          {assetName}
         </div>
         <div style={{ fontSize: 11, color: C.textDim, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-          <span>{c.iocType} · {c.source}</span>
-          {c.incidentClass && (
-            <span
-              title={`Clasificación eCSIRT/MISP: ${c.incidentClass.label}${c.incidentClass.subclass ? ` · ${c.incidentClass.subclass}` : ""} (${c.incidentClass.misp})`}
-              style={{
-                fontSize: 9, fontWeight: 700, padding: "0 5px", borderRadius: 3, flexShrink: 0,
-                background: alpha(C.purple, 12), color: C.purple, border: `1px solid ${alpha(C.purple, 25)}`,
-              }}
-            >
-              {c.incidentClass.short}
-            </span>
-          )}
-          {c.mitre.tacticName && <span>· {c.mitre.tacticName}</span>}
-          {c.confidenceLevel && (
-            <span
-              title="Confianza de la detección"
-              style={{
-                fontSize: 9, fontWeight: 600, padding: "0 5px", borderRadius: 3,
-                border: `1px solid ${C.border}`, color: C.textDim, letterSpacing: "0.04em",
-              }}
-            >
-              {c.confidenceLevel}
-            </span>
-          )}
-          {/* Sistema origen + sensor/agente */}
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 2, color: C.textDim }}>
-            · <Server size={9} style={{ flexShrink: 0 }} />
-            {c.sourceLabel}{c.sensorKey ? ` · ${c.sensorKey}` : ""}
-          </span>
-          {/* Blast radius: N hosts afectados. Chip text-only (sin fondo rojo/amarillo
-              que competía con la info real). El número y el título aclaran la gravedad. */}
+          <span>{c.sourceLabel || c.source || "—"}</span>
           {c.assetsCount > 0 && (
             <span
-              title={`${c.assetsCount} asset(s) asociado(s) al caso — blast radius`}
+              title={`${c.assetsCount} activo(s) asociado(s)`}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 2,
                 fontSize: 10, fontWeight: 600,
@@ -3767,7 +3532,7 @@ const CaseRow = memo(function CaseRow({
       </div>
 
       <div style={{ width: 110 }}>
-        <StatusMenu c={c} onChanged={onChanged} onOpen={() => onInvestigate(c)} />
+        <StatusMenu c={c} onChanged={onChanged} onOpen={() => onSelect(c)} />
         {escalated && !resolved && (
           <span
             title={
@@ -3857,18 +3622,6 @@ const CaseRow = memo(function CaseRow({
         )}
       </div>
 
-      <div
-        title={c.scoreBreakdown
-          ? `MITRE: ${c.scoreBreakdown.mitre}/40\nEvidencia: ${c.scoreBreakdown.evidence}/35\nWazuh: ${c.scoreBreakdown.wazuh}/25\nMISP: ${c.scoreBreakdown.misp}/20\nContexto: ${c.scoreBreakdown.context}/10`
-          : undefined}
-        style={{ width: 60, textAlign: "right", fontSize: 13, color: sevColor, fontWeight: 600, cursor: c.scoreBreakdown ? "help" : undefined }}
-      >
-        {c.score}
-      </div>
-
-      {/* A3 — además del timestamp, un chip de edad en rojo/ámbar/gris según
-          el % de SLA consumido. Transmite urgencia en un vistazo sin leer
-          números. */}
       <div style={{ width: 120, textAlign: "right", fontSize: 11, color: C.textDim,
                     display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}
            title={c.detectedAt ? formatDateTimePy(c.detectedAt) : ""}>
@@ -3921,17 +3674,6 @@ const CaseRow = memo(function CaseRow({
             Adoptar
           </button>
         )}
-        <button
-          onClick={(e) => { e.stopPropagation(); onInvestigate(c); }}
-          title="Abrir investigación DFIR"
-          style={{
-            marginLeft: 4, fontSize: 10, padding: "2px 6px", borderRadius: 4,
-            background: alpha(C.purple, 12), border: `1px solid ${alpha(C.purple, 25)}`,
-            color: C.purple, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3,
-          }}
-        >
-          <Microscope size={10} /> Investigar
-        </button>
       </div>
     </div>
     </div>
@@ -4822,8 +4564,8 @@ function HandoverPanel({ operatorCi, onClose }: { operatorCi: string; onClose: (
 
 // ── Skeleton row ───────────────────────────────────────────────────────────
 // Simula un row de la tabla durante isLoading cuando aún no hay datos cached.
-// Los widths coinciden con los de la cabecera real (# CASO 72, SENSOR 120, IOC
-// flex:2, SEVERITY 80, ESTADO 110, SCORE 60, DETECTADO 120, CREADO 110, SLA 80).
+// Los widths coinciden con la cabecera (# CASO 72, ACTIVO flex:2, SEVERITY 80,
+// ESTADO 110, DETECTADO 120, CREADO 110, SLA 80).
 
 function SkeletonRow() {
   const bar = (w: number | string, h = 11) => (
@@ -4837,7 +4579,6 @@ function SkeletonRow() {
   return (
     <div style={{ ...tableRowStyle, borderBottom: `1px solid ${C.border}` }}>
       <div style={{ width: 72 }}>{bar(52)}</div>
-      <div style={{ width: 120 }}>{bar(88)}</div>
       <div style={{ flex: 2, minWidth: 0 }}>
         {bar("60%", 13)}
         <div style={{ height: 3 }} />
@@ -4845,7 +4586,6 @@ function SkeletonRow() {
       </div>
       <div style={{ width: 80 }}>{bar(60, 16)}</div>
       <div style={{ width: 110 }}>{bar(86, 16)}</div>
-      <div style={{ width: 60, display: "flex", justifyContent: "flex-end" }}>{bar(36)}</div>
       <div style={{ width: 120, display: "flex", justifyContent: "flex-end" }}>{bar(78)}</div>
       <div style={{ width: 110, display: "flex", justifyContent: "flex-end" }}>{bar(70)}</div>
       <div style={{ width: 80, display: "flex", justifyContent: "flex-end" }}>{bar(50)}</div>

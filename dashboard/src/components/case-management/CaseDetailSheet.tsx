@@ -5,11 +5,10 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, Shield, ShieldCheck, Bell, ChevronDown, ArrowUpCircle, Clock, Microscope, Upload, ExternalLink, Server, User, Network, PlusCircle, CheckCircle2, Crosshair, UserCog } from "lucide-react";
+import { X, Shield, ShieldCheck, Bell, ChevronDown, ArrowUpCircle, Clock, ExternalLink, UserCog } from "lucide-react";
 import type { SocCase, CaseStatus, EscalationLevel, CaseClassification } from "./types";
-import { ScoringDetailPanel } from "./ScoringDetailPanel";
+import { OpenCaseTicketButton } from "./OpenCaseTicketButton";
 import { loadOperatorCi, saveOperatorCi, validateCi } from "@/lib/operator-ci";
-import { inferAttackType } from "@/lib/attack-type";
 import { useSocOperators, useSocRoles, useShiftManager } from "@/hooks/useSocWorkflow";
 import { useTransitionPolicy } from "@/hooks/useTransitionPolicy";
 import { useQuery } from "@tanstack/react-query";
@@ -17,7 +16,7 @@ import { api } from "@/api/client";
 import { getTicketsByCase } from "@/api/tickets";
 import { extractApiErrorMessage } from "@/components/case-management/useCaseManagement";
 import { C, alpha } from "@/lib/cm-theme";
-import { formatDateTimePy, formatTimePy, PY_TZ } from "@/lib/format";
+import { formatDateTimePy, formatTimePy } from "@/lib/format";
 
 const SEV_COLOR: Record<string, string> = {
   CRITICAL: C.red, HIGH: C.orange, MEDIUM: C.cyan,
@@ -145,8 +144,6 @@ interface Props {
   onChangeStatus?:   (status: CaseStatus, reason?: string, operatorCi?: string, classification?: CaseClassification) => Promise<void>;
   onNotifySlack?:    (reason: "escalated" | "manual") => Promise<void>;
   onEscalate?:       (level: EscalationLevel, escalatedTo: string, reason: string, operatorCi: string) => Promise<void>;
-  /** Abre la vista de investigación DFIR completa para este caso. */
-  onInvestigate?:    (caseId: string) => void;
 }
 
 export function CaseDetailSheet({
@@ -156,7 +153,6 @@ export function CaseDetailSheet({
   onChangeStatus,
   onNotifySlack,
   onEscalate,
-  onInvestigate,
 }: Props) {
   // CI desde localStorage (persistido entre pestañas y sesiones)
   const [ciInput, setCiInput]           = useState(loadOperatorCi);
@@ -205,12 +201,12 @@ export function CaseDetailSheet({
   // Sugerencia de template según señales del caso (severidad/score/escalación).
   // No auto-aplica: destaca el chip "★ Sugerido" para reducir el "¿cuál elijo?".
   const suggestedTemplateLabel = useMemo(() => {
-    const isThreat = c.escalationSuggested || c.score >= 70
+    const isThreat = c.escalationSuggested
       || c.severity === "CRITICAL" || c.severity === "HIGH";
-    if (isThreat)      return "Cerrado — Resuelto";
-    if (c.score < 30)  return "FP — Whitelisted";
+    if (isThreat) return "Cerrado — Resuelto";
+    if (c.source === "noc_down") return "Cerrado — Mitigado";
     return "Cerrado — Sin impacto";
-  }, [c.escalationSuggested, c.score, c.severity]);
+  }, [c.escalationSuggested, c.severity, c.source]);
   // Validación en vivo: cerrar FP un caso marcado para escalación exige ≥80 chars
   // (paridad con el gate 4-eyes del backend). Avisar antes del round-trip.
   const fpNeeds80 = classification === "FALSE_POSITIVE" && c.escalationSuggested;
@@ -222,10 +218,6 @@ export function CaseDetailSheet({
   // slackOk inicializado desde el servidor si ya se notificó antes
   const [slackOk, setSlackOk]           = useState(c.slackNotifiedAt != null);
   const [slackError, setSlackError]     = useState<string | null>(null);
-
-  // ── MISP Export ─────────────────────────────────────────────────────────────
-  const [mispBusy, setMispBusy]         = useState(false);
-  const [mispResult, setMispResult]     = useState<{ ok: boolean; event_id?: string; error?: string } | null>(null);
 
   // ── Escalación ──────────────────────────────────────────────────────────────
   const [showEscModal, setShowEscModal] = useState(false);
@@ -290,61 +282,8 @@ export function CaseDetailSheet({
       .catch(() => {/* fallback al JSONB de c.timeline */});
   }, [c.id]);
 
-  // ── Sensor labels + registro inline ─────────────────────────────────────────
-  const [sensorLabels, setSensorLabels] = useState<Record<string, string>>({});
-  const [showSensorReg, setShowSensorReg] = useState(false);
-  const [sensorRegName, setSensorRegName] = useState("");
-  const [sensorRegType, setSensorRegType] = useState("wazuh");
-  const [sensorRegLoc, setSensorRegLoc]   = useState("");
-  const [sensorRegBusy, setSensorRegBusy] = useState(false);
-  const [sensorRegOk, setSensorRegOk]     = useState(false);
-  const [sensorRegErr, setSensorRegErr]   = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/sensors/labels")
-      .then((r) => r.json())
-      .then((d) => { if (d?.ok && d.labels) setSensorLabels(d.labels); })
-      .catch(() => {});
-  }, []);
-
-  // Clave de búsqueda en sensor_registry:
-  //   1. c.sensorKey (devname para OPNsense/Suricata/Fortigate, agent.ip para Wazuh)
-  //   2. c.source (source_log categórico como fallback de registro manual)
-  const regKey         = c.sensorKey || c.source;
-  const sensorResolved = sensorLabels[regKey];
-  // Nombre del agente/dispositivo a mostrar en la sección de sensor
-  const sensorDevice   = c.sensorKey || c.hostname || null;
-
-  async function handleSensorRegister() {
-    if (!sensorRegName.trim()) { setSensorRegErr("El nombre del sensor es obligatorio."); return; }
-    setSensorRegBusy(true); setSensorRegErr(null);
-    try {
-      const res = await fetch("/api/sensors/upsert", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sensor_ip:   regKey,
-          sensor_name: sensorRegName.trim(),
-          sensor_type: sensorRegType,
-          location:    sensorRegLoc.trim() || undefined,
-        }),
-      });
-      const data = await res.json() as { ok: boolean; error?: string };
-      if (!data.ok) throw new Error(data.error ?? "Error al registrar");
-      // Refresh labels
-      const labelsRes = await fetch("/api/sensors/labels");
-      const labelsData = await labelsRes.json() as { ok: boolean; labels?: Record<string, string> };
-      if (labelsData?.ok && labelsData.labels) setSensorLabels(labelsData.labels);
-      setSensorRegOk(true);
-      setShowSensorReg(false);
-    } catch (e) {
-      setSensorRegErr(e instanceof Error ? e.message : "Error de red");
-    } finally {
-      setSensorRegBusy(false);
-    }
-  }
-
   const sevColor = SEV_COLOR[c.severity] ?? C.cyan;
+  const assetLabel = c.hostname || c.srcIp || "—";
 
   // ── Adopt ─────────────────────────────────────────────────────────────────
   async function handleAdopt() {
@@ -458,45 +397,6 @@ export function CaseDetailSheet({
     } finally { setSlackBusy(false); }
   }
 
-  // ── MISP Export ───────────────────────────────────────────────────────────
-  async function handleMispExport() {
-    if (mispBusy || mispResult?.ok) return;
-    setMispBusy(true);
-    setMispResult(null);
-    try {
-      const iocType = (() => {
-        const t = (c.iocType ?? "").toLowerCase();
-        if (t.includes("ip"))     return "ip-dst";
-        if (t.includes("domain")) return "domain";
-        if (t.includes("hash") || t.includes("md5"))   return "md5";
-        if (t.includes("sha256")) return "sha256";
-        if (t.includes("url"))    return "url";
-        return "ip-dst";
-      })();
-      const tags: string[] = ["LegacyHunt"];
-      if (c.mitre.tacticName)  tags.push(`misp-galaxy:mitre-attack-pattern="${c.mitre.tacticName}"`);
-      if (c.severity === "CRITICAL" || c.severity === "HIGH") tags.push("tlp:red");
-      else tags.push("tlp:amber");
-
-      const body = {
-        title:       `[LegacyHunt] ${c.severity} — ${c.srcIp} (${c.source})`,
-        threatLevel: c.severity === "CRITICAL" ? 1 : c.severity === "HIGH" ? 2 : 3,
-        caseId:      c.id,
-        tags,
-        iocs: [{ type: iocType, value: c.srcIp, comment: `Score ${c.score} — ${c.source}` }],
-      };
-      const res  = await fetch("/api/intel/misp/export", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-      });
-      const data = await res.json() as { ok: boolean; event_id?: string; error?: string };
-      setMispResult(data);
-    } catch (e) {
-      setMispResult({ ok: false, error: e instanceof Error ? e.message : "Error de red" });
-    } finally {
-      setMispBusy(false);
-    }
-  }
-
   const transitions = policy.transitions[c.status] ?? [];
 
   // (#5) Tickets vinculados sin cerrar bloquean el cierre del caso — espejo del
@@ -541,21 +441,11 @@ export function CaseDetailSheet({
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {onInvestigate && (
-            <button
-              onClick={() => { onInvestigate(c.id); onClose(); }}
-              title="Abrir investigación DFIR completa"
-              style={{
-                display: "flex", alignItems: "center", gap: 4,
-                background: alpha(C.purple, 12), border: `1px solid ${alpha(C.purple, 25)}`,
-                borderRadius: 6, padding: "4px 10px",
-                color: C.purple, cursor: "pointer", fontSize: 11, fontWeight: 600,
-              }}
-            >
-              <Microscope size={12} />
-              Investigar
-            </button>
-          )}
+          <OpenCaseTicketButton
+            caseId={c.id}
+            hostname={c.hostname ?? c.srcIp}
+            recommendedAction={c.recommendedAction}
+          />
           <button
             onClick={onClose}
             style={{ background: "none", border: "none", cursor: "pointer", color: C.textDim }}
@@ -566,301 +456,20 @@ export function CaseDetailSheet({
       </div>
 
       <div style={{ padding: "16px 20px", flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* IOC */}
-        <Section label="IOC">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 6 }}>
-            <span style={{ fontFamily: "monospace", color: C.text, fontSize: 14, fontWeight: 600 }}>{c.srcIp}</span>
-            {c.isInternal ? (
-              <span style={{
-                fontSize: 10, padding: "2px 7px", borderRadius: 4, fontWeight: 700,
-                background: alpha(C.orange, 12), color: C.orange, border: `1px solid ${alpha(C.orange, 25)}`,
-              }}>
-                RFC1918 · INTERNA
-              </span>
-            ) : (
-              <span style={{
-                fontSize: 10, padding: "2px 7px", borderRadius: 4,
-                background: alpha(C.blue, 12), color: C.blue, border: `1px solid ${alpha(C.blue, 25)}`,
-              }}>
-                IP PÚBLICA
-              </span>
-            )}
+        {/* Activo / incidente NOC */}
+        <Section label="Activo">
+          <div style={{ fontFamily: "monospace", color: C.text, fontSize: 14, fontWeight: 600, paddingBottom: 6 }}>
+            {assetLabel}
           </div>
-          {c.isInternal && (
-            <div style={{ fontSize: 10, color: alpha(C.orange, 50), marginBottom: 4, lineHeight: 1.4 }}>
-              Enriquecimiento externo no aplica (VT/AbuseIPDB/MISP → score 0). El score refleja sólo correlación interna (Wazuh + MITRE).
-            </div>
+          {c.hostname && c.srcIp && c.hostname !== c.srcIp && (
+            <Field label="Identificador" value={c.srcIp} mono />
           )}
-          <Field label="Tipo"   value={c.iocType} />
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" }}>
-            <span style={{ color: C.textDim, fontSize: 11 }}>Fuente</span>
-            <span style={{
-              fontFamily: "monospace", fontSize: 11,
-              color: sensorResolved ? C.cyan : C.textDim,
-            }}>
-              {sensorResolved ?? c.sourceLabel}
-            </span>
-          </div>
-          <Field label="Score"  value={String(c.score)} accent={sevColor} />
+          <Field label="Origen" value={c.sourceLabel || c.source || "—"} />
+          {c.sensorKey && <Field label="Agente / dispositivo" value={c.sensorKey} mono />}
           {c.detectedAt && (
             <Field label="Detectado" value={formatDateTimePy(c.detectedAt)} />
           )}
         </Section>
-
-        {/* Fuente / Sensor */}
-        <Section label="Sensor de origen">
-          {/* Caso huérfano: ni source_log ni sensor_key — mostrar aviso explícito.
-              Sucede en casos creados antes del fix de pgUpsertCase (incidents.mjs:170)
-              que no persistía estos campos en INSERT, dejando ~490 casos sin origen. */}
-          {!c.source && !c.sensorKey && !sensorDevice ? (
-            <div style={{
-              padding: "10px 12px", borderRadius: 6,
-              background: alpha(C.orange, 8), border: `1px solid ${alpha(C.orange, 25)}`,
-              color: C.orange, fontSize: 11, lineHeight: 1.5,
-            }}>
-              <div style={{ fontWeight: 700, marginBottom: 3 }}>⚠ Origen del evento no identificado</div>
-              <div style={{ color: alpha(C.orange, 75) }}>
-                Este caso no registra sistema fuente ni sensor. Probablemente fue creado
-                antes del fix de persistencia de origen, o el flujo de apertura no propagó
-                el contexto. Adopta el caso para enriquecerlo manualmente desde el panel
-                de investigación.
-              </div>
-            </div>
-          ) : (
-            <>
-              {/* Fila sistema origen */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 0" }}>
-                <span style={{ color: C.textDim, fontSize: 10, letterSpacing: "0.08em" }}>SISTEMA</span>
-                <span style={{ fontSize: 11, color: c.sourceLabel ? C.textDim : C.orange, fontWeight: 600 }}>
-                  {c.sourceLabel || "— sin identificar —"}
-                </span>
-              </div>
-              {/* Fila agente/dispositivo */}
-              {sensorDevice && (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 0" }}>
-                  <span style={{ color: C.textDim, fontSize: 10, letterSpacing: "0.08em" }}>
-                    {c.source?.includes("wazuh") ? "AGENTE" : "DISPOSITIVO"}
-                  </span>
-                  <span style={{ fontFamily: "monospace", fontSize: 11, color: C.text }}>{sensorDevice}</span>
-                </div>
-              )}
-            </>
-          )}
-
-          <div style={{ height: 1, background: C.border, margin: "6px 0" }} />
-
-          {/* Bloque de registro de sensor: solo aplica si tenemos clave a registrar.
-              Sin regKey no podemos crear un row en sensor_registry (clave vacía). */}
-          {regKey && (<>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-              <Server size={12} color={sensorResolved ? C.cyan : C.orange} style={{ flexShrink: 0 }} />
-              <div style={{ minWidth: 0 }}>
-                <div style={{
-                  fontSize: 12, fontWeight: 600,
-                  color: sensorResolved ? C.text : C.orange,
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                }}>
-                  {sensorRegOk
-                    ? (sensorLabels[regKey] ?? regKey)
-                    : (sensorResolved ?? regKey)}
-                </div>
-                <div style={{ fontSize: 10, color: C.textDim, marginTop: 1 }}>
-                  {sensorRegOk || sensorResolved ? (
-                    <span style={{ color: C.green, display: "inline-flex", alignItems: "center", gap: 3 }}>
-                      <CheckCircle2 size={9} /> Registrado
-                    </span>
-                  ) : (
-                    <span style={{ color: C.orange }}>Sin registro — clave: {regKey}</span>
-                  )}
-                </div>
-              </div>
-            </div>
-            {!sensorResolved && !sensorRegOk && (
-              <button
-                onClick={() => setShowSensorReg((v) => !v)}
-                title="Registrar este sensor"
-                style={{
-                  display: "flex", alignItems: "center", gap: 4,
-                  fontSize: 11, padding: "3px 10px", borderRadius: 5, flexShrink: 0,
-                  background: alpha(C.orange, 8), border: `1px solid ${alpha(C.orange, 25)}`,
-                  color: C.orange, cursor: "pointer", fontWeight: 600,
-                }}
-              >
-                <PlusCircle size={11} />
-                {showSensorReg ? "Cancelar" : "Registrar"}
-              </button>
-            )}
-          </div>
-
-          {showSensorReg && (
-            <div style={{
-              marginTop: 10, padding: 10,
-              background: C.bg, border: `1px solid ${alpha(C.orange, 19)}`,
-              borderRadius: 8, display: "flex", flexDirection: "column", gap: 7,
-            }}>
-              <div style={{ fontSize: 10, color: alpha(C.orange, 50), marginBottom: 2 }}>
-                Clave: <span style={{ fontFamily: "monospace", color: C.orange }}>{regKey}</span>
-              </div>
-              <input
-                type="text"
-                value={sensorRegName}
-                onChange={(e) => setSensorRegName(e.target.value)}
-                placeholder="Nombre del sensor (ej. SIEM Principal)"
-                style={{
-                  background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5,
-                  padding: "6px 9px", color: C.text, fontSize: 12,
-                  width: "100%", boxSizing: "border-box",
-                }}
-              />
-              <select
-                value={sensorRegType}
-                onChange={(e) => setSensorRegType(e.target.value)}
-                style={{
-                  background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5,
-                  padding: "6px 9px", color: C.text, fontSize: 12, width: "100%",
-                }}
-              >
-                <option value="wazuh">Wazuh SIEM</option>
-                <option value="suricata">Suricata IDS</option>
-                <option value="firewall">Firewall</option>
-                <option value="syslog">Syslog</option>
-                <option value="zeek">Zeek NSM</option>
-                <option value="elastic">Elastic / Filebeat</option>
-                <option value="custom">Otro</option>
-              </select>
-              <input
-                type="text"
-                value={sensorRegLoc}
-                onChange={(e) => setSensorRegLoc(e.target.value)}
-                placeholder="Ubicación (opcional, ej. DC-Norte)"
-                style={{
-                  background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5,
-                  padding: "6px 9px", color: C.text, fontSize: 12,
-                  width: "100%", boxSizing: "border-box",
-                }}
-              />
-              {sensorRegErr && (
-                <div style={{ fontSize: 11, color: C.red }}>{sensorRegErr}</div>
-              )}
-              <button
-                onClick={() => void handleSensorRegister()}
-                disabled={sensorRegBusy || !sensorRegName.trim()}
-                style={{
-                  padding: "6px", borderRadius: 5, fontSize: 12, fontWeight: 600,
-                  background: alpha(C.orange, 12), border: `1px solid ${alpha(C.orange, 31)}`,
-                  color: C.orange, cursor: sensorRegBusy ? "not-allowed" : "pointer",
-                }}
-              >
-                {sensorRegBusy ? "Registrando…" : "Guardar sensor"}
-              </button>
-            </div>
-          )}
-          </>)}
-        </Section>
-
-        {/* Clasificación del ataque (badge + MITRE + categoría NIST + editor) */}
-        <AttackClassificationSection c={c} />
-
-        {/* Score breakdown */}
-        <Section label="Score breakdown">
-          <ScoreBar label="MITRE"    pts={c.scoreBreakdown.mitre}    max={40} color={C.purple} />
-          <ScoreBar label="Evidencia" pts={c.scoreBreakdown.evidence} max={35} color={C.blue} />
-          <ScoreBar label="Wazuh"    pts={c.scoreBreakdown.wazuh}    max={25} color={sevColor} />
-          <ScoreBar label="MISP"     pts={c.scoreBreakdown.misp}     max={20} color={C.orange} />
-          <ScoreBar label="Contexto" pts={c.scoreBreakdown.context}  max={10} color={C.green} />
-        </Section>
-
-        {/* ── Análisis de scoring + taxonomía (solo casos en investigación) ─── */}
-        {["EN_ANALISIS", "CONFIRMADO", "ESCALADO", "MONITOREADO"].includes(c.status) && (
-          <ScoringDetailPanel caseId={c.id} baseScore={c.score} />
-        )}
-
-        {/* Enriquecimiento IOC */}
-        {(c.enrichment.vtMalicious != null
-          || c.enrichment.abuseConfidence != null
-          || c.enrichment.inUrlhaus
-          || c.enrichment.inOpenphish
-          || c.enrichment.vtPermalink
-          || c.enrichment.shodanOrg
-          || c.enrichment.inMisp) && (
-          <Section label="Inteligencia">
-            {/* VirusTotal */}
-            {(c.enrichment.vtMalicious != null || c.enrichment.vtPermalink) && (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" }}>
-                <span style={{ color: C.textDim, fontSize: 11 }}>VirusTotal</span>
-                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  {c.enrichment.vtMalicious != null && (
-                    <span style={{
-                      fontSize: 11, padding: "1px 8px", borderRadius: 4,
-                      background: c.enrichment.vtMalicious > 0 ? alpha(C.red, 12) : alpha(C.green, 12),
-                      color: c.enrichment.vtMalicious > 0 ? C.red : C.green,
-                      border: `1px solid ${c.enrichment.vtMalicious > 0 ? alpha(C.red, 25) : alpha(C.green, 25)}`,
-                    }}>
-                      {c.enrichment.vtMalicious} maliciosos
-                      {c.enrichment.vtSuspicious != null && c.enrichment.vtSuspicious > 0
-                        ? ` / ${c.enrichment.vtSuspicious} sospechosos` : ""}
-                    </span>
-                  )}
-                  {c.enrichment.vtPermalink && (
-                    <a href={c.enrichment.vtPermalink} target="_blank" rel="noopener noreferrer"
-                       style={{ color: C.blue, fontSize: 10, display: "flex", alignItems: "center", gap: 2 }}>
-                      <ExternalLink size={10} /> VT Report
-                    </a>
-                  )}
-                </span>
-              </div>
-            )}
-            {c.enrichment.abuseConfidence != null && (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" }}>
-                <span style={{ color: C.textDim, fontSize: 11 }}>AbuseIPDB</span>
-                <span style={{
-                  fontSize: 11, padding: "1px 8px", borderRadius: 4,
-                  background: c.enrichment.abuseConfidence > 50 ? alpha(C.red, 12) : alpha(C.green, 12),
-                  color: c.enrichment.abuseConfidence > 50 ? C.red : C.textDim,
-                  border: `1px solid ${c.enrichment.abuseConfidence > 50 ? alpha(C.red, 25) : alpha(C.green, 25)}`,
-                }}>
-                  {c.enrichment.abuseConfidence}% confianza
-                </span>
-              </div>
-            )}
-            {/* Shodan */}
-            {c.enrichment.shodanOrg && (
-              <>
-                <div style={{ height: 1, background: C.border, margin: "5px 0" }} />
-                <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
-                  <span style={{ color: C.textDim, fontSize: 10, letterSpacing: "0.1em" }}>SHODAN</span>
-                </div>
-                <Field label="Organización" value={c.enrichment.shodanOrg} />
-                {c.enrichment.shodanCountry && <Field label="País" value={c.enrichment.shodanCountry} />}
-                {c.enrichment.shodanPorts?.length > 0 && (
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0" }}>
-                    <span style={{ color: C.textDim, fontSize: 11 }}>Puertos abiertos</span>
-                    <span style={{ color: C.text, fontSize: 11, fontFamily: "monospace" }}>
-                      {c.enrichment.shodanPorts.slice(0, 8).join(", ")}
-                      {c.enrichment.shodanPorts.length > 8 ? ` +${c.enrichment.shodanPorts.length - 8}` : ""}
-                    </span>
-                  </div>
-                )}
-              </>
-            )}
-            {(c.enrichment.inUrlhaus || c.enrichment.inOpenphish || c.enrichment.inMisp) && (
-              <>
-                <div style={{ height: 1, background: C.border, margin: "5px 0" }} />
-                {c.enrichment.inUrlhaus   && <Field label="URLhaus"   value="Detectado" accent={C.red} />}
-                {c.enrichment.inOpenphish && <Field label="OpenPhish" value="Detectado" accent={C.orange} />}
-                {c.enrichment.inMisp      && <Field label="MISP"      value="En base de datos" accent={C.purple} />}
-              </>
-            )}
-            {c.enrichment.enrichedAt && (
-              <div style={{ marginTop: 6, color: C.textDim, fontSize: 10 }}>
-                Enriquecido: {new Date(c.enrichment.enrichedAt).toLocaleString("es-ES", { timeZone: PY_TZ, dateStyle: "short", timeStyle: "short" })}
-              </div>
-            )}
-          </Section>
-        )}
-
-        {/* Acción recomendada */}
         {c.recommendedAction && (
           <Section label="Acción recomendada">
             <div style={{ color: C.text, fontSize: 13, lineHeight: 1.5 }}>
@@ -892,14 +501,10 @@ export function CaseDetailSheet({
           </Section>
         )}
 
-        {/* Contexto del activo — siempre visible, campos editables inline */}
-        <NetworkContextSection c={c} />
-
-        {/* NIST SP 800-61 — Clasificación de impacto */}
         {(c.incidentCategory || c.functionalImpact || c.informationImpact || c.recoverability) && (
           <Section label="Impacto NIST SP 800-61">
             <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6 }}>
-              <Network size={10} color={C.textDim} />
+              <Shield size={10} color={C.textDim} />
               <span style={{ color: C.textDim, fontSize: 10, letterSpacing: "0.1em" }}>CLASIFICACIÓN</span>
             </div>
             {c.incidentCategory && (
@@ -1368,52 +973,28 @@ export function CaseDetailSheet({
           </Section>
         )}
 
-        {/* Slack + MISP export */}
+        {/* Slack */}
         <Section label="Notificaciones">
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button
-              onClick={() => void handleSlack()}
-              disabled={slackBusy || (slackOk && !slackError)}
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                fontSize: 12, padding: "6px 14px", borderRadius: 6,
-                background: slackError ? alpha(C.red, 8) : slackOk ? alpha(C.green, 12) : C.border,
-                border: `1px solid ${slackError ? alpha(C.red, 25) : slackOk ? alpha(C.green, 25) : C.border}`,
-                color: slackError ? C.red : slackOk ? C.green : C.textDim,
-                cursor: slackBusy || (slackOk && !slackError) ? "not-allowed" : "pointer",
-              }}
-              title={slackError ?? undefined}
-            >
-              <Bell size={12} />
-              {slackError
-                ? "Error al enviar — click para reintentar"
-                : slackOk
-                  ? `Enviado${c.slackNotifiedAt ? " · " + formatTimePy(c.slackNotifiedAt) : ""}`
-                  : slackBusy ? "Enviando…" : "Notificar a Slack"}
-            </button>
-
-            {/* MISP Export */}
-            <button
-              onClick={() => void handleMispExport()}
-              disabled={mispBusy || mispResult?.ok === true}
-              title="Exportar este IOC a MISP como nuevo evento"
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                fontSize: 12, padding: "6px 14px", borderRadius: 6,
-                background: mispResult?.ok ? alpha(C.purple, 12) : mispResult?.ok === false ? alpha(C.red, 6) : C.border,
-                border: `1px solid ${mispResult?.ok ? alpha(C.purple, 25) : mispResult?.ok === false ? alpha(C.red, 19) : C.border}`,
-                color: mispResult?.ok ? C.purple : mispResult?.ok === false ? C.red : C.textDim,
-                cursor: mispBusy || mispResult?.ok ? "not-allowed" : "pointer",
-              }}
-            >
-              <Upload size={12} />
-              {mispResult?.ok
-                ? `Exportado a MISP · Event #${mispResult.event_id}`
-                : mispResult?.ok === false
-                  ? `Error: ${mispResult.error?.slice(0, 30)}`
-                  : mispBusy ? "Exportando…" : "Exportar a MISP"}
-            </button>
-          </div>
+          <button
+            onClick={() => void handleSlack()}
+            disabled={slackBusy || (slackOk && !slackError)}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              fontSize: 12, padding: "6px 14px", borderRadius: 6,
+              background: slackError ? alpha(C.red, 8) : slackOk ? alpha(C.green, 12) : C.border,
+              border: `1px solid ${slackError ? alpha(C.red, 25) : slackOk ? alpha(C.green, 25) : C.border}`,
+              color: slackError ? C.red : slackOk ? C.green : C.textDim,
+              cursor: slackBusy || (slackOk && !slackError) ? "not-allowed" : "pointer",
+            }}
+            title={slackError ?? undefined}
+          >
+            <Bell size={12} />
+            {slackError
+              ? "Error al enviar — click para reintentar"
+              : slackOk
+                ? `Enviado${c.slackNotifiedAt ? " · " + formatTimePy(c.slackNotifiedAt) : ""}`
+                : slackBusy ? "Enviando…" : "Notificar a Slack"}
+          </button>
         </Section>
 
         {/* Timeline — fuente canónica: case_timeline_events; fallback: JSONB legacy */}
@@ -1544,21 +1125,6 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function ScoreBar({ label, pts, max, color }: { label: string; pts: number; max: number; color: string }) {
-  const pct = max > 0 ? Math.min(100, (pts / max) * 100) : 0;
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0" }}>
-      <span style={{ color: C.textDim, fontSize: 10, width: 60, flexShrink: 0 }}>{label}</span>
-      <div style={{ flex: 1, height: 5, background: C.border, borderRadius: 3, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 3, transition: "width 0.3s" }} />
-      </div>
-      <span style={{ color, fontSize: 10, width: 36, textAlign: "right", flexShrink: 0 }}>
-        {pts}/{max}
-      </span>
-    </div>
-  );
-}
-
 function Field({ label, value, mono, accent }: { label: string; value: string; mono?: boolean; accent?: string }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "3px 0" }}>
@@ -1567,496 +1133,5 @@ function Field({ label, value, mono, accent }: { label: string; value: string; m
         {value}
       </span>
     </div>
-  );
-}
-
-// ── AttackClassificationSection ───────────────────────────────────────────────
-// Badge "Tipo de ataque detectado" + editor MITRE/categoría NIST. Cuando el
-// caso llega sin metadata (caso típico tipo E8D8863), permite al operador
-// clasificarlo manualmente. PATCH /api/incidents/:id persiste los cambios.
-
-const MITRE_TACTICS: Array<{ id: string; name: string }> = [
-  { id: "TA0043", name: "Reconocimiento" },
-  { id: "TA0042", name: "Desarrollo de recursos" },
-  { id: "TA0001", name: "Acceso inicial" },
-  { id: "TA0002", name: "Ejecución" },
-  { id: "TA0003", name: "Persistencia" },
-  { id: "TA0004", name: "Escalada de privilegios" },
-  { id: "TA0005", name: "Evasión de defensas" },
-  { id: "TA0006", name: "Acceso a credenciales" },
-  { id: "TA0007", name: "Descubrimiento" },
-  { id: "TA0008", name: "Movimiento lateral" },
-  { id: "TA0009", name: "Recolección" },
-  { id: "TA0011", name: "Comando y control (C2)" },
-  { id: "TA0010", name: "Exfiltración" },
-  { id: "TA0040", name: "Impacto" },
-];
-
-const NIST_CATEGORIES: Array<{ id: string; label: string }> = [
-  { id: "UNAUTHORIZED_ACCESS", label: "Acceso no autorizado" },
-  { id: "DENIAL_OF_SERVICE",   label: "Denegación de servicio" },
-  { id: "MALICIOUS_CODE",      label: "Código malicioso" },
-  { id: "IMPROPER_USAGE",      label: "Uso indebido" },
-  { id: "SCANS_PROBES",        label: "Escaneo / sondas" },
-  { id: "INVESTIGATION",       label: "Investigación abierta" },
-  { id: "OTHER",               label: "Otro" },
-];
-
-function AttackClassificationSection({ c }: { c: SocCase }) {
-  const inferred = inferAttackType(c);
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving]   = useState(false);
-  const [err, setErr]         = useState<string | null>(null);
-  const [ok, setOk]           = useState(false);
-
-  const [tacticId, setTacticId]     = useState(c.mitre.tacticId    ?? "");
-  const [techniqueId, setTechId]    = useState(c.mitre.techniqueId ?? "");
-  const [category, setCategory]     = useState(c.incidentCategory  ?? "");
-
-  async function handleSave() {
-    setSaving(true); setErr(null); setOk(false);
-    try {
-      const tacticName = MITRE_TACTICS.find((t) => t.id === tacticId)?.name ?? null;
-      const body: Record<string, unknown> = {};
-      if (tacticId    !== (c.mitre.tacticId    ?? "")) { body.mitreTacticId    = tacticId    || null; body.mitreTacticName = tacticName; }
-      if (techniqueId !== (c.mitre.techniqueId ?? "")) body.mitreTechniqueId = techniqueId || null;
-      if (category    !== (c.incidentCategory  ?? "")) body.incidentCategory = category    || null;
-      if (!Object.keys(body).length) { setEditing(false); return; }
-      try {
-        await api.patch(`/api/incidents/${encodeURIComponent(c.id)}`, body);
-      } catch (err: unknown) {
-        const msg = (err as { response?: { data?: { error?: string }; status?: number } })?.response?.data?.error
-                 ?? (err as Error)?.message
-                 ?? "Error al guardar";
-        throw new Error(msg);
-      }
-      setOk(true); setEditing(false);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Error al guardar");
-    } finally { setSaving(false); }
-  }
-
-  const inputStyle: React.CSSProperties = {
-    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4,
-    color: C.text, fontSize: 11, padding: "3px 6px", width: "100%",
-  };
-
-  return (
-    <Section label="Tipo de ataque detectado">
-      {/* Badge principal */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "8px 10px", borderRadius: 6, marginBottom: 8,
-        background: inferred ? alpha(inferred.color, 8) : alpha(C.orange, 6),
-        border: `1px solid ${inferred ? alpha(inferred.color, 31) : alpha(C.orange, 25)}`,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
-          <Crosshair size={14} color={inferred ? inferred.color : C.orange} style={{ flexShrink: 0 }} />
-          <div style={{ minWidth: 0 }}>
-            <div style={{
-              fontSize: 13, fontWeight: 700,
-              color: inferred ? inferred.color : C.orange,
-            }}>
-              {inferred ? inferred.label : "No clasificado"}
-            </div>
-            <div style={{ fontSize: 10, color: C.textDim, marginTop: 1 }}>
-              {inferred ? inferred.detail : "Falta MITRE táctica y categoría NIST. Clasificar manualmente."}
-              {inferred?.confidence === "low" && (
-                <span style={{ marginLeft: 6, padding: "1px 5px", borderRadius: 3, background: alpha(C.orange, 15), color: C.orange, fontSize: 9 }}>
-                  inferido
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-        <button
-          onClick={() => { setEditing((v) => !v); setErr(null); setOk(false); }}
-          style={{
-            background: "none", border: `1px solid ${C.border}`, borderRadius: 4,
-            color: C.textDim, fontSize: 10, padding: "3px 10px", cursor: "pointer", flexShrink: 0,
-          }}
-        >
-          {editing ? "Cancelar" : (inferred ? "Editar" : "Clasificar")}
-        </button>
-      </div>
-
-      {!editing ? (
-        <>
-          {(c.mitre.tacticId || c.mitre.techniqueId) && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 4 }}>
-              {c.mitre.tacticName  && <Field label="Táctica"   value={c.mitre.tacticName} />}
-              {c.mitre.tacticId    && <Field label="Táctica ID" value={c.mitre.tacticId} mono />}
-              {c.mitre.techniqueId && <Field label="Técnica"   value={c.mitre.techniqueId} mono />}
-            </div>
-          )}
-          {c.incidentCategory && (
-            <Field label="Categoría NIST" value={c.incidentCategory} />
-          )}
-          {ok && <div style={{ marginTop: 6, color: C.green, fontSize: 11 }}>✓ Clasificación guardada</div>}
-        </>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div>
-            <div style={{ color: C.textDim, fontSize: 9, marginBottom: 2 }}>TÁCTICA MITRE ATT&amp;CK</div>
-            <select style={inputStyle} value={tacticId} onChange={(e) => setTacticId(e.target.value)}>
-              <option value="">— No clasificada —</option>
-              {MITRE_TACTICS.map((t) => (
-                <option key={t.id} value={t.id}>{t.id} · {t.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <div style={{ color: C.textDim, fontSize: 9, marginBottom: 2 }}>TÉCNICA (opcional, ej. T1110, T1078)</div>
-            <input
-              style={{ ...inputStyle, fontFamily: "monospace" }}
-              value={techniqueId}
-              onChange={(e) => setTechId(e.target.value.toUpperCase().replace(/[^T0-9.]/g, ""))}
-              placeholder="T1110"
-            />
-          </div>
-          <div>
-            <div style={{ color: C.textDim, fontSize: 9, marginBottom: 2 }}>CATEGORÍA NIST SP 800-61</div>
-            <select style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option value="">— Sin categoría —</option>
-              {NIST_CATEGORIES.map((n) => (
-                <option key={n.id} value={n.id}>{n.label}</option>
-              ))}
-            </select>
-          </div>
-          {err && <div style={{ color: C.red, fontSize: 11 }}>{err}</div>}
-          <button
-            onClick={() => void handleSave()}
-            disabled={saving}
-            style={{
-              background: C.blue, border: "none", borderRadius: 4, color: "#ffffff",
-              fontSize: 11, padding: "5px 12px", cursor: saving ? "not-allowed" : "pointer",
-              opacity: saving ? 0.7 : 1, alignSelf: "flex-start",
-            }}
-          >
-            {saving ? "Guardando…" : "Guardar clasificación"}
-          </button>
-        </div>
-      )}
-    </Section>
-  );
-}
-
-// ── NetworkContextSection ─────────────────────────────────────────────────────
-// Sección de contexto de red/activo. Siempre visible; permite edición inline.
-// PATCH /api/incidents/:id guarda los cambios.
-
-const NETWORK_ZONE_COLOR: Record<string, string> = {
-  perimeter: C.orange,
-  endpoint:  C.blue,
-  internal:  C.purple,
-  email:     C.cyan,
-};
-
-const FW_ACTION_COLOR: Record<string, string> = {
-  ACCEPT: C.green,
-  ALLOW:  C.green,
-  DENY:   C.red,
-  DROP:   C.red,
-  BLOCK:  C.red,
-};
-
-function NetworkContextSection({ c }: { c: SocCase }) {
-  const [editing, setEditing]   = useState(false);
-  const [saving,  setSaving]    = useState(false);
-  const [saveErr, setSaveErr]   = useState<string | null>(null);
-  const [saveOk,  setSaveOk]    = useState(false);
-
-  const [hostname,   setHostname]   = useState(c.hostname        ?? "");
-  const [srcIp,      setSrcIp]      = useState(c.sourceIp        ?? "");
-  const [srcPort,    setSrcPort]    = useState(c.sourcePort != null ? String(c.sourcePort) : "");
-  const [dstIp,      setDstIp]      = useState(c.destinationIp   ?? "");
-  const [dstPort,    setDstPort]    = useState(c.destinationPort != null ? String(c.destinationPort) : "");
-  const [proto,      setProto]      = useState(c.protocol        ?? "");
-  const [user,       setUser]       = useState(c.affectedUser    ?? "");
-  const [assetId,    setAssetId]    = useState(c.assetId         ?? "");
-  const [assetType,  setAssetType]  = useState(c.assetType       ?? "");
-  const [bizImpact,  setBizImpact]  = useState(c.businessImpact  ?? "");
-
-  const hasAnyData = c.hostname || c.sourceIp || c.destinationIp || c.affectedUser
-    || c.networkZone || c.protocol || c.firewallAction || c.srcCountry;
-
-  async function handleSave() {
-    setSaving(true);
-    setSaveErr(null);
-    setSaveOk(false);
-    try {
-      const body: Record<string, unknown> = {};
-      if (hostname  !== (c.hostname        ?? "")) body.hostname        = hostname  || null;
-      if (srcIp     !== (c.sourceIp        ?? "")) body.sourceIp        = srcIp     || null;
-      if (srcPort   !== (c.sourcePort != null ? String(c.sourcePort) : ""))
-        body.sourcePort = srcPort ? Number(srcPort) : null;
-      if (dstIp     !== (c.destinationIp   ?? "")) body.destinationIp   = dstIp     || null;
-      if (dstPort   !== (c.destinationPort != null ? String(c.destinationPort) : ""))
-        body.destinationPort = dstPort ? Number(dstPort) : null;
-      if (proto     !== (c.protocol        ?? "")) body.protocol        = proto     || null;
-      if (user      !== (c.affectedUser    ?? "")) body.affectedUser    = user      || null;
-      if (assetId   !== (c.assetId         ?? "")) body.assetId         = assetId   || null;
-      if (assetType !== (c.assetType       ?? "")) body.assetType       = assetType || null;
-      if (bizImpact !== (c.businessImpact  ?? "")) body.businessImpact  = bizImpact || null;
-
-      if (!Object.keys(body).length) { setEditing(false); return; }
-
-      try {
-        await api.patch(`/api/incidents/${encodeURIComponent(c.id)}`, body);
-      } catch (err: unknown) {
-        const msg = (err as { response?: { data?: { error?: string }; status?: number } })?.response?.data?.error
-                 ?? (err as Error)?.message
-                 ?? "Error al guardar";
-        throw new Error(msg);
-      }
-      setSaveOk(true);
-      setEditing(false);
-    } catch (err) {
-      setSaveErr(err instanceof Error ? err.message : "Error al guardar");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const inputStyle: React.CSSProperties = {
-    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4,
-    color: C.text, fontSize: 11, padding: "2px 6px", width: "100%",
-    fontFamily: "monospace",
-  };
-  const rowStyle: React.CSSProperties = {
-    display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 4,
-  };
-
-  return (
-    <Section label="Contexto de red / activo">
-      {/* Cabecera con badges automáticos y botón editar */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <Server size={10} color={C.textDim} />
-          <span style={{ color: C.textDim, fontSize: 10, letterSpacing: "0.1em" }}>RED</span>
-          {c.networkZone && (() => {
-            const zc = NETWORK_ZONE_COLOR[c.networkZone] ?? C.textDim;
-            return (
-              <span style={{
-                fontSize: 9, padding: "1px 6px", borderRadius: 3, fontWeight: 600,
-                background: alpha(zc, 12),
-                color: zc,
-                border: `1px solid ${alpha(zc, 25)}`,
-                textTransform: "uppercase",
-              }}>
-                {c.networkZone}
-              </span>
-            );
-          })()}
-          {c.firewallAction && (() => {
-            const fc = FW_ACTION_COLOR[c.firewallAction] ?? C.textDim;
-            return (
-              <span style={{
-                fontSize: 9, padding: "1px 6px", borderRadius: 3, fontWeight: 600,
-                background: alpha(fc, 12),
-                color: fc,
-                border: `1px solid ${alpha(fc, 25)}`,
-              }}>
-                {c.firewallAction}
-              </span>
-            );
-          })()}
-          {c.srcCountry && (
-            <span style={{ fontSize: 10, color: C.textDim }} title="País origen">
-              🌐 {c.srcCountry}
-            </span>
-          )}
-        </div>
-        <button
-          onClick={() => { setEditing((v) => !v); setSaveErr(null); setSaveOk(false); }}
-          style={{
-            background: "none", border: `1px solid ${C.border}`, borderRadius: 4,
-            color: C.textDim, fontSize: 10, padding: "2px 8px", cursor: "pointer",
-          }}
-        >
-          {editing ? "Cancelar" : "Editar"}
-        </button>
-      </div>
-
-      {!editing ? (
-        // ── Modo lectura ────────────────────────────────────────────────────
-        <>
-          {/* Flujo de red: SRC → DST */}
-          {(c.sourceIp || c.destinationIp) ? (
-            <div style={{
-              display: "flex", alignItems: "center", gap: 6, padding: "6px 8px",
-              background: C.bg, borderRadius: 6, marginBottom: 6, flexWrap: "wrap",
-            }}>
-              {/* Origen */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-                <span style={{ color: C.textDim, fontSize: 9 }}>ORIGEN</span>
-                <span style={{ color: C.text, fontSize: 12, fontFamily: "monospace", fontWeight: 600 }}>
-                  {c.sourceIp ?? "—"}
-                  {c.sourcePort != null && <span style={{ color: C.textDim }}>:{c.sourcePort}</span>}
-                </span>
-              </div>
-              {/* Protocolo/acción */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, minWidth: 60 }}>
-                {c.protocol && (
-                  <span style={{ color: C.textDim, fontSize: 9, textTransform: "uppercase" }}>
-                    {c.protocol}
-                  </span>
-                )}
-                <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-                  <div style={{ width: 20, height: 1, background: C.border }} />
-                  <span style={{ fontSize: 8, color: C.textDim }}>▶</span>
-                  <div style={{ width: 20, height: 1, background: C.border }} />
-                </div>
-              </div>
-              {/* Destino */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-                <span style={{ color: C.textDim, fontSize: 9 }}>DESTINO</span>
-                <span style={{ color: C.text, fontSize: 12, fontFamily: "monospace", fontWeight: 600 }}>
-                  {c.destinationIp ?? "—"}
-                  {c.destinationPort != null && <span style={{ color: C.textDim }}>:{c.destinationPort}</span>}
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div style={{ color: C.textDim, fontSize: 11, padding: "4px 0", fontStyle: "italic" }}>
-              Sin datos de red — <button
-                onClick={() => setEditing(true)}
-                style={{ background: "none", border: "none", color: C.blue, fontSize: 11, cursor: "pointer", padding: 0 }}
-              >
-                añadir manualmente
-              </button>
-            </div>
-          )}
-
-          {/* Hostname / Activo */}
-          {(c.hostname || c.assetId || c.assetType) && (
-            <>
-              <div style={{ height: 1, background: C.border, margin: "6px 0" }} />
-              <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
-                <Server size={9} color={C.textDim} />
-                <span style={{ color: C.textDim, fontSize: 9, letterSpacing: "0.1em" }}>ACTIVO</span>
-              </div>
-              {c.hostname  && <Field label="Hostname"    value={c.hostname}  mono />}
-              {c.assetId   && <Field label="Asset ID"    value={c.assetId}   mono />}
-              {c.assetType && <Field label="Tipo activo" value={c.assetType} />}
-            </>
-          )}
-
-          {/* Usuario */}
-          {c.affectedUser && (
-            <>
-              <div style={{ height: 1, background: C.border, margin: "6px 0" }} />
-              <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
-                <User size={9} color={C.textDim} />
-                <span style={{ color: C.textDim, fontSize: 9, letterSpacing: "0.1em" }}>USUARIO AFECTADO</span>
-              </div>
-              <Field label="Usuario" value={c.affectedUser} mono />
-            </>
-          )}
-
-          {/* Impacto negocio */}
-          {c.businessImpact && (
-            <>
-              <div style={{ height: 1, background: C.border, margin: "6px 0" }} />
-              <div style={{ color: C.text, fontSize: 12, lineHeight: 1.5 }}>
-                <span style={{ color: C.textDim, fontSize: 10 }}>Impacto negocio: </span>
-                {c.businessImpact}
-              </div>
-            </>
-          )}
-
-          {/* Mensaje si no hay nada */}
-          {!hasAnyData && (
-            <div style={{ color: C.textDim, fontSize: 11, textAlign: "center", padding: "8px 0" }}>
-              Sin datos de contexto — haz clic en Editar para añadirlos
-            </div>
-          )}
-
-          {saveOk && (
-            <div style={{ marginTop: 6, color: C.green, fontSize: 11 }}>✓ Guardado correctamente</div>
-          )}
-        </>
-      ) : (
-        // ── Modo edición ────────────────────────────────────────────────────
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={rowStyle}>
-            <div>
-              <div style={{ color: C.textDim, fontSize: 9, marginBottom: 2 }}>IP ORIGEN</div>
-              <input style={inputStyle} value={srcIp} onChange={(e) => setSrcIp(e.target.value)} placeholder="192.168.1.10" />
-            </div>
-            <div>
-              <div style={{ color: C.textDim, fontSize: 9, marginBottom: 2 }}>PUERTO ORIGEN</div>
-              <input style={inputStyle} value={srcPort} onChange={(e) => setSrcPort(e.target.value.replace(/\D/g,""))} placeholder="54321" inputMode="numeric" />
-            </div>
-          </div>
-          <div style={rowStyle}>
-            <div>
-              <div style={{ color: C.textDim, fontSize: 9, marginBottom: 2 }}>IP DESTINO</div>
-              <input style={inputStyle} value={dstIp} onChange={(e) => setDstIp(e.target.value)} placeholder="203.0.113.45" />
-            </div>
-            <div>
-              <div style={{ color: C.textDim, fontSize: 9, marginBottom: 2 }}>PUERTO DESTINO</div>
-              <input style={inputStyle} value={dstPort} onChange={(e) => setDstPort(e.target.value.replace(/\D/g,""))} placeholder="443" inputMode="numeric" />
-            </div>
-          </div>
-          <div style={rowStyle}>
-            <div>
-              <div style={{ color: C.textDim, fontSize: 9, marginBottom: 2 }}>PROTOCOLO</div>
-              <select style={{ ...inputStyle, fontFamily: "inherit" }} value={proto} onChange={(e) => setProto(e.target.value)}>
-                <option value="">—</option>
-                {["tcp","udp","icmp","dns","http","https","smtp","ftp","ssh"].map((p) => (
-                  <option key={p} value={p}>{p.toUpperCase()}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <div style={{ color: C.textDim, fontSize: 9, marginBottom: 2 }}>HOSTNAME</div>
-              <input style={inputStyle} value={hostname} onChange={(e) => setHostname(e.target.value)} placeholder="WORKSTATION-01" />
-            </div>
-          </div>
-          <div style={rowStyle}>
-            <div>
-              <div style={{ color: C.textDim, fontSize: 9, marginBottom: 2 }}>USUARIO AFECTADO</div>
-              <input style={inputStyle} value={user} onChange={(e) => setUser(e.target.value)} placeholder="jdoe@empresa.com" />
-            </div>
-            <div>
-              <div style={{ color: C.textDim, fontSize: 9, marginBottom: 2 }}>TIPO ACTIVO</div>
-              <select style={{ ...inputStyle, fontFamily: "inherit" }} value={assetType} onChange={(e) => setAssetType(e.target.value)}>
-                <option value="">—</option>
-                {["SERVER","WORKSTATION","NETWORK_DEVICE","CLOUD","IOT","UNKNOWN"].map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div>
-            <div style={{ color: C.textDim, fontSize: 9, marginBottom: 2 }}>ASSET ID</div>
-            <input style={inputStyle} value={assetId} onChange={(e) => setAssetId(e.target.value)} placeholder="AST-001" />
-          </div>
-          <div>
-            <div style={{ color: C.textDim, fontSize: 9, marginBottom: 2 }}>IMPACTO NEGOCIO</div>
-            <textarea
-              style={{ ...inputStyle, fontFamily: "inherit", resize: "vertical" }}
-              value={bizImpact}
-              onChange={(e) => setBizImpact(e.target.value)}
-              placeholder="Describe el impacto en los servicios o datos de negocio…"
-              rows={2}
-            />
-          </div>
-          {saveErr && <div style={{ color: C.red, fontSize: 11 }}>{saveErr}</div>}
-          <button
-            onClick={() => void handleSave()}
-            disabled={saving}
-            style={{
-              background: C.blue, border: "none", borderRadius: 4, color: "#ffffff",
-              fontSize: 11, padding: "5px 12px", cursor: saving ? "not-allowed" : "pointer",
-              opacity: saving ? 0.7 : 1,
-            }}
-          >
-            {saving ? "Guardando…" : "Guardar contexto"}
-          </button>
-        </div>
-      )}
-    </Section>
   );
 }
