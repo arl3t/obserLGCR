@@ -37,7 +37,9 @@ interface DeviceUptimeMonitorProps {
   rttLoading: boolean;
   onRefresh: () => void;
   refreshing: boolean;
-  operations: ReactNode;
+  operations?: ReactNode;
+  hideOperations?: boolean;
+  hideHeader?: boolean;
 }
 
 export function DeviceUptimeMonitor({
@@ -48,6 +50,8 @@ export function DeviceUptimeMonitor({
   onRefresh,
   refreshing,
   operations,
+  hideOperations = false,
+  hideHeader = false,
 }: DeviceUptimeMonitorProps) {
   const st = statusWord(device.status);
   const bars = buildUptimeBars(device.status, device.last_seen_at);
@@ -94,6 +98,7 @@ export function DeviceUptimeMonitor({
 
   return (
     <>
+      {!hideHeader && (
       <div className="ut-toolbar">
         <header className="ut-header" style={{ marginBottom: 0 }}>
           <Link to="/noc" className="ut-header__back">
@@ -111,6 +116,7 @@ export function DeviceUptimeMonitor({
           Actualizar
         </button>
       </div>
+      )}
 
       <div className="ut-layout">
         <div className="ut-main">
@@ -183,12 +189,14 @@ export function DeviceUptimeMonitor({
             <ResponseChart points={rttPoints} loading={rttLoading} />
           </section>
 
+          {!hideOperations && operations && (
           <section className="ut-card ut-ops" aria-labelledby="device-ops">
             <h2 id="device-ops" className="ut-chart-head__title" style={{ marginBottom: "0.75rem" }}>
               Operaciones
             </h2>
             {operations}
           </section>
+          )}
         </div>
 
         <UptimeSidebar

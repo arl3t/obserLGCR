@@ -1,0 +1,24 @@
+# Telegraf SNMP collector (opcional)
+#   docker compose -f docker-compose.yml -f docker-compose.telegraf.yml up -d telegraf
+#
+services:
+  telegraf:
+    image: telegraf:1.32-alpine
+    container_name: obserlgcr-telegraf
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    volumes:
+      - ./deploy/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    environment:
+      SITE: ${NOC_DEFAULT_REGION:-lgcr-dc1}
+      REGION: ${NOC_DEFAULT_REGION:-global}
+      SNMP_COMMUNITY: ${SNMP_COMMUNITY:-public}
+      SNMP_TARGET_1: ${SNMP_TARGET_1:-192.168.1.1}
+      OBSERLGCR_API_URL: http://api:8787
+      NOC_AGENT_TOKEN: ${NOC_AGENT_TOKEN:-}
+      PG_HOST: postgres
+      PG_USER: ${PG_USER:-obserlgcr}
+      PG_PASSWORD: ${PG_PASSWORD:-obserlgcr}
+      PG_DATABASE: ${PG_DATABASE:-obserlgcr}

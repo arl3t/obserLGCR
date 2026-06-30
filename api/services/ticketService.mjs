@@ -602,10 +602,22 @@ export async function createActionRequest({
     if (existing[0]) {
       tid = existing[0].ticket_id;
     } else {
-      if (!orgSlug && !orgId) throw new Error("especificá la organización (cliente) para la solicitud");
+      let effOrgSlug = orgSlug;
+      let effOrgId = orgId;
+      if (!effOrgSlug && !effOrgId) {
+        const lgcrId = await resolveOrgId({ orgSlug: "lgcr" });
+        if (lgcrId) effOrgId = lgcrId;
+        else {
+          const orgs = await getActiveOrgs();
+          if (orgs[0]) effOrgId = orgs[0].id;
+        }
+      }
+      if (!effOrgSlug && !effOrgId) {
+        throw new Error("especificá la organización (cliente) para la solicitud");
+      }
       const t = await createTicket({
         subject: title, priority: urgency, channel: "SOC_INITIATED",
-        caseId, operatorCi: requestedBy, orgSlug, orgId,
+        caseId, operatorCi: requestedBy, orgSlug: effOrgSlug, orgId: effOrgId,
       });
       tid = t.id;
     }
@@ -942,6 +954,108 @@ export async function getActiveOrgs() {
     `SELECT id, slug, name FROM organizations
       WHERE status = 'ACTIVE' ORDER BY (slug = 'default') DESC, name ASC`,
   );
+}
+
+const ORG_STATUSES = new Set(["ACTIVE", "SUSPENDED", "ARCHIVED"]);
+
+function normalizeOrgSlug(raw) {
+  return String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/** Listado completo para administración (Config → Organizaciones). */
+export async function listAllOrganizations() {
+  return pgQuery(
+    `SELECT o.id, o.slug, o.name, o.status, o.created_at, o.updated_at,
+            COUNT(t.id)::int AS ticket_count
+       FROM organizations o
+       LEFT JOIN tickets t ON t.org_id = o.id
+      GROUP BY o.id
+      ORDER BY o.name ASC`,
+  );
+}
+
+export async function createOrganization({ slug, name, status = "ACTIVE" }) {
+  const cleanSlug = normalizeOrgSlug(slug);
+  if (!cleanSlug || cleanSlug.length < 2) {
+    throw new Error("slug inválido (mín. 2 caracteres: letras, números o guiones)");
+  }
+  if (!name?.trim()) throw new Error("name es obligatorio");
+  if (!ORG_STATUSES.has(status)) throw new Error("status inválido");
+
+  const rows = await pgQuery(
+    `INSERT INTO organizations (slug, name, status)
+     VALUES ($1, $2, $3)
+     RETURNING id, slug, name, status, created_at, updated_at`,
+    [cleanSlug, name.trim(), status],
+  );
+  return { ...rows[0], ticket_count: 0 };
+}
+
+export async function updateOrganization(id, { slug, name, status } = {}) {
+  const current = await pgQuery(
+    `SELECT id, slug FROM organizations WHERE id = $1`,
+    [id],
+  );
+  if (!current[0]) throw new Error("organización no encontrada");
+
+  const sets = [];
+  const vals = [id];
+  let n = 2;
+
+  if (slug !== undefined) {
+    const cleanSlug = normalizeOrgSlug(slug);
+    if (!cleanSlug || cleanSlug.length < 2) {
+      throw new Error("slug inválido (mín. 2 caracteres: letras, números o guiones)");
+    }
+    sets.push(`slug = $${n++}`);
+    vals.push(cleanSlug);
+  }
+  if (name !== undefined) {
+    if (!String(name).trim()) throw new Error("name no puede estar vacío");
+    sets.push(`name = $${n++}`);
+    vals.push(String(name).trim());
+  }
+  if (status !== undefined) {
+    if (!ORG_STATUSES.has(status)) throw new Error("status inválido");
+    sets.push(`status = $${n++}`);
+    vals.push(status);
+  }
+  if (!sets.length) return current[0];
+
+  sets.push("updated_at = now()");
+  const rows = await pgQuery(
+    `UPDATE organizations SET ${sets.join(", ")} WHERE id = $1
+     RETURNING id, slug, name, status, created_at, updated_at`,
+    vals,
+  );
+  const counts = await pgQuery(
+    `SELECT COUNT(*)::int AS ticket_count FROM tickets WHERE org_id = $1`,
+    [id],
+  );
+  return { ...rows[0], ticket_count: counts[0]?.ticket_count ?? 0 };
+}
+
+export async function deleteOrganization(id) {
+  const org = await pgQuery(`SELECT id, slug FROM organizations WHERE id = $1`, [id]);
+  if (!org[0]) throw new Error("organización no encontrada");
+  if (org[0].slug === "default") {
+    throw new Error("no se puede eliminar la organización por defecto");
+  }
+
+  const counts = await pgQuery(
+    `SELECT COUNT(*)::int AS c FROM tickets WHERE org_id = $1`,
+    [id],
+  );
+  if ((counts[0]?.c ?? 0) > 0) {
+    throw new Error(`no se puede eliminar: ${counts[0].c} ticket(s) asociados`);
+  }
+
+  await pgQuery(`DELETE FROM organizations WHERE id = $1`, [id]);
+  return { ok: true };
 }
 
 // ── Tickets vinculados a un caso (para la vista de Investigación) ─────────────

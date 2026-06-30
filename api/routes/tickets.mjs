@@ -12,6 +12,7 @@
  * (mismo cuidado que operators.mjs::/me).
  */
 
+import { requireAuth } from "../middleware/auth.middleware.mjs";
 import express from "express";
 import { pgQuery } from "../db/postgres.mjs";
 import { resolveJwtOperatorCi } from "../services/operatorResolver.mjs";
@@ -83,6 +84,34 @@ export default function ticketsRouter(getIo) {
     try {
       res.json({ ok: true, organizations: await tickets.getActiveOrgs() });
     } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+  });
+
+  // ── Administración de organizaciones (Config → Organizaciones) ───────────────
+  router.get("/orgs/manage", requireAuth("admin"), async (_req, res) => {
+    try {
+      res.json({ ok: true, organizations: await tickets.listAllOrganizations() });
+    } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+  });
+
+  router.post("/orgs", requireAuth("admin"), async (req, res) => {
+    try {
+      const org = await tickets.createOrganization(req.body ?? {});
+      res.status(201).json({ ok: true, organization: org });
+    } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
+  });
+
+  router.patch("/orgs/:orgId", requireAuth("admin"), async (req, res) => {
+    try {
+      const org = await tickets.updateOrganization(req.params.orgId, req.body ?? {});
+      res.json({ ok: true, organization: org });
+    } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
+  });
+
+  router.delete("/orgs/:orgId", requireAuth("admin"), async (req, res) => {
+    try {
+      await tickets.deleteOrganization(req.params.orgId);
+      res.json({ ok: true });
+    } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
   });
 
   // ── HTML del informe adjunto a un mensaje (para el modal/iframe) ──────────────

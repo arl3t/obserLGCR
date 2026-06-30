@@ -1,0 +1,181 @@
+/*
+ * NOC Modern — tema oscuro profesional con animaciones de alerta.
+ * Complementa .dark + obser-shell para operadores de monitoreo 24/7.
+ */
+
+@keyframes noc-alert-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, #f87171 55%, transparent);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 6px transparent;
+    opacity: 0.88;
+  }
+}
+
+@keyframes noc-alert-glow {
+  0%, 100% { background-color: color-mix(in srgb, #f87171 18%, transparent); }
+  50% { background-color: color-mix(in srgb, #f87171 28%, transparent); }
+}
+
+@keyframes noc-status-online {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, #4ade80 40%, transparent); }
+  70% { box-shadow: 0 0 0 5px transparent; }
+}
+
+@keyframes noc-row-critical {
+  0%, 100% { border-left-color: #f87171; }
+  50% { border-left-color: #fca5a5; }
+}
+
+.dark .obser-shell,
+.obser-shell {
+  --noc-glow-critical: color-mix(in srgb, #f87171 35%, transparent);
+  --noc-glow-warning: color-mix(in srgb, #ffb300 30%, transparent);
+  --noc-glow-ok: color-mix(in srgb, #4ade80 30%, transparent);
+}
+
+/* Badge de estado NOC */
+.noc-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.noc-status__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.noc-status--online {
+  color: #4ade80;
+  background: color-mix(in srgb, #4ade80 12%, transparent);
+  border-color: color-mix(in srgb, #4ade80 35%, transparent);
+}
+
+.noc-status--online .noc-status__dot {
+  background: #4ade80;
+  animation: noc-status-online 2.4s ease-in-out infinite;
+}
+
+.noc-status--offline {
+  color: #fca5a5;
+  background: color-mix(in srgb, #f87171 16%, transparent);
+  border-color: color-mix(in srgb, #f87171 45%, transparent);
+  animation: noc-alert-pulse 2s ease-in-out infinite;
+}
+
+.noc-status--offline .noc-status__dot {
+  background: #f87171;
+}
+
+.noc-status--degraded {
+  color: #fcd34d;
+  background: color-mix(in srgb, #ffb300 14%, transparent);
+  border-color: color-mix(in srgb, #ffb300 40%, transparent);
+}
+
+.noc-status--degraded .noc-status__dot {
+  background: #ffb300;
+}
+
+/* Fila de tabla con alerta activa */
+.noc-row--alerting {
+  animation: noc-alert-glow 2.5s ease-in-out infinite;
+  border-left: 3px solid #f87171;
+}
+
+.noc-row--alerting td:first-child {
+  animation: noc-row-critical 2s ease-in-out infinite;
+}
+
+/* Tarjeta métrica con pulso crítico */
+.noc-metric--critical {
+  animation: noc-alert-pulse 2.2s ease-in-out infinite;
+  border-color: color-mix(in srgb, #f87171 50%, var(--ut-border)) !important;
+}
+
+/* Panel colapsable NOC */
+.noc-collapse {
+  border: 1px solid var(--ut-border);
+  border-radius: var(--ut-radius);
+  background: var(--ut-bg-card);
+  overflow: hidden;
+}
+
+.noc-collapse__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ut-text);
+  background: var(--ut-bg-elevated);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.noc-collapse__head:hover {
+  background: color-mix(in srgb, var(--ut-accent) 8%, var(--ut-bg-elevated));
+}
+
+.noc-collapse__body {
+  padding: 1rem;
+  border-top: 1px solid var(--ut-border-subtle);
+}
+
+/* Tabs internos del activo */
+.noc-asset-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--ut-border-subtle);
+}
+
+.noc-asset-tabs__btn {
+  padding: 0.45rem 0.85rem;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ut-text-secondary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+
+.noc-asset-tabs__btn--active {
+  color: var(--ut-accent);
+  border-bottom-color: var(--ut-accent);
+}
+
+.noc-asset-tabs__btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ut-focus);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .noc-status--online .noc-status__dot,
+  .noc-status--offline,
+  .noc-row--alerting,
+  .noc-metric--critical {
+    animation: none !important;
+  }
+}

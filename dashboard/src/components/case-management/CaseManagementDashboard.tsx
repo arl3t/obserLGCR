@@ -826,8 +826,8 @@ export function CaseManagementDashboard() {
       // si dispara durante mount, se pisa con el resto del paint.
       const t = setTimeout(() => {
         toast("⌨ Probá `?` para ver los atajos de teclado", {
-          description: "j/k navegan, ⏎ abre, a adopta, i investiga.",
-          duration: 8000,
+          description: "j/k navegan, ⏎ abre detalle, a adopta.",
+          duration: 1000,
         });
         try { localStorage.setItem(FLAG, "1"); } catch { /* private mode */ }
       }, 800);

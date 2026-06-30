@@ -18,6 +18,9 @@ const MIG_DIR = join(__dirname, "migrations");
 
 async function main() {
   const pool = getPgPool();
+  pool.on("error", (err) => {
+    console.error("migrate pool error:", err.message);
+  });
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -51,12 +54,18 @@ async function main() {
       ok++;
       console.log(`  ✔ ${file}`);
     } catch (err) {
-      await client.query("ROLLBACK");
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        /* conexión puede haberse perdido */
+      }
       console.error(`  x ${file} — FALLO: ${err.message}`);
-      // Continúa: en el fork demo algunas migraciones asumen objetos del
-      // data-lake. Las que fallen quedan sin registrar y pueden reintentarse.
     } finally {
-      client.release();
+      try {
+        client.release();
+      } catch {
+        /* noop */
+      }
     }
   }
 

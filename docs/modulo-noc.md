@@ -61,14 +61,62 @@ Migraciones:
 
 - `api/migrations/117_noc.sql` — dispositivos, métricas, alertas, acciones
 - `api/migrations/118_noc_agent_auth.sql` — credenciales de agentes
+- `api/migrations/115_inventory_collector.sql` — inventario HW/SW
+- `api/migrations/122_noc_timescale_observability.sql` — TimescaleDB (métricas, logs, gobernanza)
+- `api/migrations/123_software_governance_source_log.sql` — source_log + config whitelist
 
 Tablas NOC:
 
 - `noc_devices` — inventario de dispositivos monitoreados
-- `noc_metrics` — métricas time-series (CPU, mem, RTT, bandwidth)
-- `noc_logs` — eventos y logs centralizados
-- `noc_alerts` — alertas (down, high_cpu, high_mem, etc.)
+- `noc_metrics` — métricas legacy (compat UI; dual-write con TimescaleDB)
+- `cpu_usage`, `memory_usage`, `disk_usage`, `network_traffic` — hypertables TimescaleDB
+- `keepalive_status`, `system_logs` — keepalive y logs estructurados
+- `server_software`, `software_blacklist`, `software_whitelist` — gobernanza
+- `incidents_queue` — cola → worker → `incident_cases_pg`
+- `noc_logs` — eventos discretos (watcher, acciones)
+- `noc_alerts` — alertas (down, high_cpu, high_mem, high_rtt)
 - `noc_remote_actions` — cola de acciones remotas (ping, traceroute, reboot)
+- `inventory_hosts`, `inventory_software`, … — inventario collector
+
+## API inventario y gobernanza
+
+Base: `/api/inventory`
+
+| Endpoint | Descripción |
+|----------|-------------|
+| `POST /report` | Reporte inventario schema v3 (agente JWT) |
+| `GET /hosts` | Lista hosts inventariados |
+| `GET /hosts/:id/software` | Software instalado |
+| `GET /governance/blacklist` | Reglas lista negra |
+| `POST /governance/blacklist` | Agregar regla |
+| `GET /governance/whitelist` | Lista blanca |
+| `PATCH /governance/config` | `{ strict_whitelist: true/false }` |
+| `GET /governance/incidents-queue` | Cola de incidentes pendientes |
+
+## Cron / lake export
+
+| Endpoint | Descripción |
+|----------|-------------|
+| `GET /api/noc/cron/governance-worker` | Procesa `incidents_queue` |
+| `GET /api/noc/cron/lake-export?dt=YYYY-MM-DD` | Export JSONL → `NOC_LAKE_ROOT` |
+
+Script manual: `node api/scripts/export-noc-lake.mjs`
+
+Hive DDL: `api/migrations/hive/001_noc_catalog_external_tables.hql`
+
+SNMP/Telegraf: [`docs/noc-snmp-telegraf.md`](noc-snmp-telegraf.md)
+
+## Variables de entorno
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `AGENT_JWT_SECRET` | dev secret | Firma JWT de agentes (producción: valor aleatorio largo) |
+| `NOC_AGENT_TOKEN` | vacío | Token estático legacy (opcional, alternativa a JWT) |
+| `NOC_WATCHER_INTERVAL_MS` | `30000` | Intervalo del watcher interno (0 = off) |
+| `GOVERNANCE_INCIDENT_WORKER` | `true` | Worker cola software → Gestión |
+| `SNMP_COMMUNITY` | `public` | Comunidad SNMP para Telegraf |
+
+Ver `.env.example` para la lista completa.
 
 ## Agentes
 
@@ -126,15 +174,6 @@ Comandos: `-Setup`, `-Renew`, `-Status`, `-Uninstall`, `-Help`.
 | `--renew` / `-Renew` | Renovar JWT |
 | `--status` / `-Status` | Token, agenda, device ID |
 | `--uninstall` / `-Uninstall` | Quitar agenda y archivos locales |
-
-## Variables de entorno
-
-| Variable | Default | Descripción |
-|----------|---------|-------------|
-| `AGENT_JWT_SECRET` | dev secret | Firma JWT de agentes (producción: valor aleatorio largo) |
-| `NOC_AGENT_TOKEN` | vacío | Token estático legacy (opcional, alternativa a JWT) |
-| `NOC_WATCHER_INTERVAL_MS` | `30000` | Intervalo del watcher interno (0 = off) |
-| `CRON_SECRET` | vacío | Auth para endpoint cron externo |
 
 ## Heartbeat watcher
 

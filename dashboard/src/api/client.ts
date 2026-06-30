@@ -5,7 +5,9 @@ import axios, {
 } from "axios";
 import { tokenStore } from "@/auth/token-store";
 import { PLATFORM_AUTH_ENABLED } from "@/auth/auth-config";
-import { getLegacyHuntApiBase } from "@/lib/api-origin";
+import { getDirectLabApiBase, getLegacyHuntApiBase, setRuntimeApiFallback, shouldRetryApiOnNetworkError } from "@/lib/api-origin";
+
+type ApiRequestConfig = InternalAxiosRequestConfig & { __apiRetried?: boolean };
 
 export const api = axios.create({
   baseURL: undefined,
@@ -19,7 +21,14 @@ export const api = axios.create({
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const b = getLegacyHuntApiBase();
-    config.baseURL = b || undefined;
+    if (b) {
+      config.baseURL = b;
+    } else if (typeof window !== "undefined") {
+      // Mismo origen explícito (nginx :8080, Vite :5173) — evita ambigüedad en axios/PWA.
+      config.baseURL = window.location.origin;
+    } else {
+      config.baseURL = undefined;
+    }
     // Prioridad: token OIDC de react-oidc-context (via tokenStore) > localStorage legacy
     const token = tokenStore.get() ?? localStorage.getItem("lh_auth_token");
     if (token) {
@@ -62,6 +71,17 @@ api.interceptors.response.use(
       });
     }
     if (!error.response) {
+      const cfg = error.config as ApiRequestConfig | undefined;
+      if (shouldRetryApiOnNetworkError(cfg)) {
+        const direct = getDirectLabApiBase();
+        setRuntimeApiFallback(direct);
+        if (cfg) {
+          cfg.__apiRetried = true;
+          cfg.baseURL = direct;
+          return api.request(cfg);
+        }
+      }
+
       Sentry.captureException(error, {
         tags: { kind: "api_network" },
         extra: {
@@ -73,14 +93,18 @@ api.interceptors.response.use(
       const dev = import.meta.env.DEV;
       const base = getLegacyHuntApiBase();
       const orig = (error.message ?? "").trim();
-      const tail =
-        dev && !base
-          ? " Compruebe el API: curl -sS http://127.0.0.1:8787/api/health/live (debe ser 200). Si falla: desde la raíz del repo docker compose --profile core --profile lakehouse up -d legacyhunt-api (o el stack completo). Con npm run dev el proxy Vite reenvía /api a 127.0.0.1:8787."
-          : dev && base
-            ? ` Está definido VITE_API_BASE_URL=${base}: el navegador llama ahí directamente (sin proxy de Vite). Esa URL debe ser alcanzable desde este equipo; si abre el dashboard en otro host o móvil, use la IP correcta o deje VITE_API_BASE_URL vacío y el proxy de Vite en :5173 reenviará /api a :8787.`
-            : " Defina VITE_API_BASE_URL (URL absoluta del API) o sirva el front detrás de un proxy que reenvíe /api a legacyhunt-api.";
+      const direct = getDirectLabApiBase();
+      const tail = dev
+        ? base
+          ? ` VITE_API_BASE_URL=${base} debe ser alcanzable. Deje la variable vacía y use npm run dev (:5173) o Docker (:8080).`
+          : ` Verifique: curl -sS http://127.0.0.1:8787/api/health · docker compose up -d api`
+        : base
+          ? ` ${base} no responde. Compruebe que el API escucha en :8787.`
+          : direct
+            ? ` Abra http://localhost:8080 (Docker) o http://localhost:8787/api/health directo. Si persiste: borre datos del sitio / service worker y recargue.`
+            : " Use Docker (http://localhost:8080) o defina VITE_API_BASE_URL=http://<host>:8787 y reconstruya el dashboard.";
       const msg = dev
-        ? `Sin conexión con legacyhunt-api (${orig || "sin respuesta HTTP"}).${tail}`
+        ? `Sin conexión con obserlgcr-api (${orig || "sin respuesta HTTP"}).${tail}`
         : `Sin conexión con el API (${orig || "red"}).${tail}`;
       return Promise.reject(new Error(msg));
     }

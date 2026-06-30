@@ -41,6 +41,9 @@ import platformUsersRouter from "./routes/platformUsers.mjs";
 import detectionRouter, { detectionIngestRouter } from "./routes/detection.mjs";
 import { runNocHeartbeatWatcher } from "./services/nocHeartbeatWatcher.mjs";
 import { primeCatalogCache } from "./services/sourceLogCatalog.mjs";
+import { startGovernanceIncidentWorker } from "./services/governanceIncidentWorker.mjs";
+import { isTimescaleAvailable } from "./services/nocTimescale.mjs";
+import inventoryRouter from "./routes/inventory.mjs";
 
 const PORT = config.PORT;
 
@@ -64,9 +67,31 @@ const globalLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+function isLabBrowserOrigin(origin) {
+  try {
+    const h = new URL(origin).hostname.toLowerCase();
+    if (h === "localhost" || h === "127.0.0.1") return true;
+    if (h.endsWith(".local") || h.endsWith(".lan")) return true;
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+    if (/^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 app.use(
   cors({
-    origin: config.socketIoCorsOrigins,
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      if (config.socketIoCorsOrigins.includes(origin)) return callback(null, true);
+      // Demo/lab sin OIDC: permitir LAN para VITE_API_BASE_URL directo (móvil, preview, etc.)
+      if (config.OIDC_ENABLED !== "true" && isLabBrowserOrigin(origin)) {
+        return callback(null, true);
+      }
+      callback(null, false);
+    },
     credentials: true,
   }),
 );
@@ -98,6 +123,7 @@ app.use("/api/assets", assetRegistryRouter());
 app.use("/api/auth", authRouter());
 app.use("/api/users", platformUsersRouter());
 app.use("/api/noc", nocRouter());
+app.use("/api/inventory", inventoryRouter());
 
 const detRouter = detectionRouter();
 app.use("/api/detection", detectionIngestRouter());
@@ -131,6 +157,15 @@ httpServer.listen(PORT, async () => {
   } catch (err) {
     logger.warn({ msg: err.message }, "source_log_catalog_prime_failed");
   }
+
+  try {
+    const tsOk = await isTimescaleAvailable(true);
+    logger.info("noc_timescale_status", { available: tsOk });
+  } catch (err) {
+    logger.warn({ msg: err.message }, "noc_timescale_check_failed");
+  }
+
+  startGovernanceIncidentWorker();
 
   // Heartbeat watcher NOC — evalúa dispositivos sin señal cada 30s
   const nocWatcherMs = parseInt(process.env.NOC_WATCHER_INTERVAL_MS ?? "30000", 10);

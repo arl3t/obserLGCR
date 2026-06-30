@@ -308,6 +308,7 @@ export const config = {
   slackNotifyMinWazuhLevel: p.SLACK_NOTIFY_MIN_WAZUH_LEVEL,
   slackNotifyMinIocScore: p.SLACK_NOTIFY_MIN_IOC_SCORE,
   dashboardUrl: p.DASHBOARD_URL,
+  OIDC_ENABLED: p.OIDC_ENABLED,
   socketIoCorsOrigins: buildSocketIoCorsOrigins(p.DASHBOARD_URL, p.SOCKETIO_CORS_ORIGINS),
   autoProcessLowMediumEnabled: p.AUTO_PROCESS_LOW_MEDIUM_ENABLED !== "false",
   autoProcessLowMediumIntervalHours: p.AUTO_PROCESS_LOW_MEDIUM_INTERVAL_HOURS,

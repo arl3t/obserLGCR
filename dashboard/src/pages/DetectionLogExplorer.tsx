@@ -1,22 +1,25 @@
 /**
- * DetectionLogExplorer — Explorador de eventos ingeridos por tipo de log.
+ * DetectionLogExplorer — Búsqueda, filtros y detalle de eventos ingeridos.
  */
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Filter, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Filter, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { fetchDetectionEvents, fetchDetectionLogTypes } from "@/api/detection";
+import { Input } from "@/components/ui/input";
+import { DetectionEventSheet } from "@/components/detection/DetectionEventSheet";
+import { DetectionSeverityChip } from "@/components/detection/DetectionSeverityChip";
+import { fetchDetectionEvents, fetchDetectionLogTypes, type DetectionEvent } from "@/api/detection";
 import { cn } from "@/lib/utils";
 
-const SEVERITY_CLASS: Record<string, string> = {
-  critical: "text-red-400",
-  error: "text-red-400/90",
-  warn: "text-amber-400",
-  info: "text-muted-foreground",
-  debug: "text-muted-foreground/70",
-};
+const HOUR_OPTIONS = [
+  { value: 1, label: "1 h" },
+  { value: 6, label: "6 h" },
+  { value: 24, label: "24 h" },
+  { value: 72, label: "3 d" },
+  { value: 168, label: "7 d" },
+];
 
 function fmtTs(ts: string) {
   return new Date(ts).toLocaleString("es-PY", { dateStyle: "short", timeStyle: "medium" });
@@ -27,13 +30,22 @@ export function DetectionLogExplorerPage() {
   const family = params.get("family") ?? "";
   const sourceLog = params.get("source_log") ?? "";
   const severity = params.get("severity") ?? "";
+  const hours = Math.min(Math.max(parseInt(params.get("hours") ?? "24", 10) || 24, 1), 168);
+  const qParam = params.get("q") ?? "";
 
   const [page, setPage] = useState(0);
+  const [searchDraft, setSearchDraft] = useState(qParam);
+  const [selected, setSelected] = useState<DetectionEvent | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const limit = 50;
 
   useEffect(() => {
     setPage(0);
-  }, [family, sourceLog, severity]);
+  }, [family, sourceLog, severity, hours, qParam]);
+
+  useEffect(() => {
+    setSearchDraft(qParam);
+  }, [qParam]);
 
   const { data: logTypes = [] } = useQuery({
     queryKey: ["detection", "log-types"],
@@ -42,15 +54,16 @@ export function DetectionLogExplorerPage() {
   });
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ["detection", "events", family, sourceLog, severity, page],
+    queryKey: ["detection", "events", family, sourceLog, severity, hours, qParam, page],
     queryFn: () =>
       fetchDetectionEvents({
-        hours: 24,
+        hours,
         limit,
         offset: page * limit,
         family: family || undefined,
         source_log: sourceLog || undefined,
         severity: severity || undefined,
+        q: qParam || undefined,
       }),
     staleTime: 30_000,
   });
@@ -62,15 +75,35 @@ export function DetectionLogExplorerPage() {
   const families = [...new Set(logTypes.map((t) => t.sensor_family))].sort();
   const sourcesForFamily = logTypes.filter((t) => !family || t.sensor_family === family);
 
+  const applySearch = () => {
+    const next = new URLSearchParams(params);
+    const q = searchDraft.trim();
+    if (q) next.set("q", q);
+    else next.delete("q");
+    setParams(next);
+  };
+
+  const setHours = (h: number) => {
+    const next = new URLSearchParams(params);
+    next.set("hours", String(h));
+    setParams(next);
+  };
+
+  const openEvent = (ev: DetectionEvent) => {
+    setSelected(ev);
+    setSheetOpen(true);
+  };
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-5 p-6">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">Explorador de logs</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Explorador de eventos</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {total} eventos en 24h
+            {total.toLocaleString("es-PY")} coincidencias · ventana {hours}h
             {family && ` · familia ${family}`}
             {sourceLog && ` · ${sourceLog}`}
+            {qParam && ` · búsqueda «${qParam}»`}
           </p>
         </div>
         <Button
@@ -85,9 +118,29 @@ export function DetectionLogExplorerPage() {
         </Button>
       </header>
 
-      <div className="obser-panel p-4">
+      <div className="obser-panel space-y-4 p-4">
         <div className="flex flex-wrap items-end gap-3">
-          <Filter className="h-4 w-4 text-cyan-400" />
+          <Filter className="mb-2 h-4 w-4 text-cyan-400" />
+          <div>
+            <label className="mb-1 block text-[11px] text-muted-foreground">Ventana</label>
+            <div className="flex flex-wrap gap-1">
+              {HOUR_OPTIONS.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => setHours(o.value)}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-[12px] transition-colors",
+                    hours === o.value
+                      ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-300"
+                      : "border-border text-muted-foreground hover:border-cyan-500/30",
+                  )}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div>
             <label className="mb-1 block text-[11px] text-muted-foreground">Familia</label>
             <select
@@ -153,6 +206,22 @@ export function DetectionLogExplorerPage() {
             </select>
           </div>
         </div>
+
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchDraft}
+              onChange={(e) => setSearchDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && applySearch()}
+              placeholder="Buscar en mensaje, IP, hostname, rule_id…"
+              className="h-9 pl-8 text-[13px]"
+            />
+          </div>
+          <Button type="button" size="sm" variant="secondary" onClick={applySearch}>
+            Buscar
+          </Button>
+        </div>
       </div>
 
       <div className="obser-panel overflow-hidden">
@@ -161,29 +230,40 @@ export function DetectionLogExplorerPage() {
         ) : events.length === 0 ? (
           <div className="py-16 text-center text-sm text-muted-foreground">
             Sin eventos con los filtros actuales.
+            {!qParam && total === 0 && (
+              <p className="mt-2 text-[12px]">
+                ¿Shipper configurado? Revise la pestaña Fuentes.
+              </p>
+            )}
           </div>
         ) : (
-          <div className="max-h-[600px] divide-y divide-border overflow-y-auto">
+          <div className="max-h-[640px] divide-y divide-border overflow-y-auto">
             {events.map((ev) => (
-              <div
+              <button
                 key={ev.id}
-                className="flex flex-col gap-1 px-4 py-3 text-[12px] transition-colors hover:bg-cyan-500/5 sm:flex-row sm:items-start sm:gap-4"
+                type="button"
+                onClick={() => openEvent(ev)}
+                className={cn(
+                  "detection-event-row flex w-full flex-col gap-2 px-4 py-3 text-left text-[12px] sm:flex-row sm:items-start sm:gap-4",
+                  (ev.severity === "critical" || ev.severity === "error") && "detection-event-row--critical",
+                )}
               >
                 <span className="obser-mono shrink-0 text-muted-foreground">{fmtTs(ev.event_time)}</span>
                 <span className="obser-mono w-28 shrink-0 text-cyan-400/80">{ev.source_log}</span>
-                <span
-                  className={cn(
-                    "w-16 shrink-0 font-semibold uppercase",
-                    SEVERITY_CLASS[ev.severity] ?? "text-muted-foreground",
-                  )}
-                >
-                  {ev.severity}
-                </span>
+                <DetectionSeverityChip severity={ev.severity} className="shrink-0" />
+                {(ev.src_ip || ev.dst_ip) && (
+                  <span className="obser-mono shrink-0 text-[11px] text-muted-foreground">
+                    {ev.src_ip ?? "—"} → {ev.dst_ip ?? "—"}
+                  </span>
+                )}
                 {ev.hostname && (
                   <span className="obser-mono shrink-0 text-muted-foreground">{ev.hostname}</span>
                 )}
+                {ev.rule_id && (
+                  <span className="obser-mono shrink-0 text-[10px] text-amber-400/80">#{ev.rule_id}</span>
+                )}
                 <span className="min-w-0 flex-1 break-all text-foreground">{ev.message}</span>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -192,7 +272,7 @@ export function DetectionLogExplorerPage() {
       {total > limit && (
         <div className="flex items-center justify-between text-[12px] text-muted-foreground">
           <span>
-            Página {page + 1} de {totalPages}
+            Página {page + 1} de {totalPages} · {total.toLocaleString("es-PY")} total
           </span>
           <div className="flex gap-2">
             <Button
@@ -214,6 +294,8 @@ export function DetectionLogExplorerPage() {
           </div>
         </div>
       )}
+
+      <DetectionEventSheet event={selected} open={sheetOpen} onOpenChange={setSheetOpen} />
     </div>
   );
 }

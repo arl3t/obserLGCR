@@ -114,7 +114,6 @@ export function LoginPage() {
                   type="email"
                   autoComplete="email"
                   required
-                  placeholder="admin@obserlgcr.local"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="ut-input pl-9"
@@ -164,9 +163,7 @@ export function LoginPage() {
           {/* Footer */}
           <div className="border-t border-border/60 bg-muted/20 px-8 py-4">
             <p className="text-center text-[10px] leading-relaxed text-muted-foreground">
-              Credenciales gestionadas en PostgreSQL.
-              <br />
-              Lab: <span className="obser-mono text-primary">admin@obserlgcr.local</span>
+              La seguridad inicia con tu clave.
             </p>
           </div>
         </div>

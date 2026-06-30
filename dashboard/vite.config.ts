@@ -132,6 +132,10 @@ export default defineConfig(({ mode }) => {
       // Móvil / otra máquina en LAN: http://<IP-del-Mac>:5173 — el proxy sigue yendo a legacyhunt-api en el host.
       host: true,
       proxy: {
+        "/api/v1/ipam": {
+          target: "http://127.0.0.1:8790",
+          changeOrigin: true,
+        },
         "/api": {
           target: "http://127.0.0.1:8787",
           changeOrigin: true,
@@ -143,7 +147,7 @@ export default defineConfig(({ mode }) => {
               writeProxyApi502(res, {
                 ok: false,
                 error:
-                  "Proxy Vite: sin conexión a legacyhunt-api en 127.0.0.1:8787. Arranque: docker compose --profile lakehouse up -d legacyhunt-api",
+                  "Proxy Vite: sin conexión a obserlgcr-api en 127.0.0.1:8787. Arranque: docker compose up -d api",
               });
             });
           },
@@ -156,6 +160,10 @@ export default defineConfig(({ mode }) => {
       port: 4173,
       host: true,
       proxy: {
+        "/api/v1/ipam": {
+          target: "http://127.0.0.1:8790",
+          changeOrigin: true,
+        },
         "/api": {
           target: "http://127.0.0.1:8787",
           changeOrigin: true,
@@ -165,7 +173,7 @@ export default defineConfig(({ mode }) => {
               writeProxyApi502(res, {
                 ok: false,
                 error:
-                  "Proxy preview: sin conexión a legacyhunt-api en 127.0.0.1:8787. Arranque el API o use VITE_API_BASE_URL.",
+                  "Proxy preview: sin conexión a obserlgcr-api en 127.0.0.1:8787. Arranque: docker compose up -d api",
               });
             });
           },

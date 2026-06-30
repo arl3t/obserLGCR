@@ -1,0 +1,140 @@
+/*
+ * Detection Center — estilos del explorador y KPIs.
+ * Complementa obser-shell / dark para operadores SOC.
+ */
+
+.detection-footer {
+  border: 1px solid color-mix(in srgb, #22d3ee 16%, transparent);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, #1e293b 50%, transparent) 0%,
+    color-mix(in srgb, #0e7490 8%, transparent) 100%
+  );
+}
+
+.detection-pipeline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+
+.detection-pipeline__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.375rem;
+  border: 1px solid color-mix(in srgb, #22d3ee 18%, transparent);
+  background: color-mix(in srgb, #22d3ee 6%, transparent);
+  color: color-mix(in srgb, #67e8f9 85%, white);
+}
+
+.detection-pipeline__arrow {
+  color: color-mix(in srgb, #64748b 80%, transparent);
+  font-size: 0.625rem;
+}
+
+.detection-sev {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.detection-sev--critical {
+  color: #fca5a5;
+  background: color-mix(in srgb, #ef4444 18%, transparent);
+  border-color: color-mix(in srgb, #ef4444 35%, transparent);
+}
+
+.detection-sev--error {
+  color: #fca5a5;
+  background: color-mix(in srgb, #f87171 12%, transparent);
+  border-color: color-mix(in srgb, #f87171 28%, transparent);
+}
+
+.detection-sev--warn {
+  color: #fcd34d;
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+  border-color: color-mix(in srgb, #f59e0b 30%, transparent);
+}
+
+.detection-sev--info {
+  color: #94a3b8;
+  background: color-mix(in srgb, #64748b 12%, transparent);
+  border-color: color-mix(in srgb, #64748b 25%, transparent);
+}
+
+.detection-sev--debug {
+  color: #64748b;
+  background: color-mix(in srgb, #475569 10%, transparent);
+  border-color: color-mix(in srgb, #475569 20%, transparent);
+}
+
+.detection-timeline-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 48px;
+}
+
+.detection-timeline-bar__col {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 2px 2px 0 0;
+  background: color-mix(in srgb, #22d3ee 35%, transparent);
+  transition: height 0.2s ease;
+}
+
+.detection-timeline-bar__col--critical {
+  background: color-mix(in srgb, #ef4444 55%, #22d3ee 20%);
+}
+
+.detection-event-row {
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.detection-event-row:hover {
+  background: color-mix(in srgb, #22d3ee 6%, transparent);
+  border-left-color: color-mix(in srgb, #22d3ee 50%, transparent);
+}
+
+.detection-event-row--critical {
+  border-left-color: color-mix(in srgb, #ef4444 70%, transparent);
+}
+
+.detection-family-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.detection-family-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent 60%,
+    color-mix(in srgb, #22d3ee 4%, transparent) 100%
+  );
+}
+
+
+@media (min-width: 768px) {
+  .detection-event-sheet {
+    width: min(100%, 32rem) !important;
+    max-width: 32rem;
+  }
+}

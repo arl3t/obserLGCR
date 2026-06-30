@@ -1,8 +1,10 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { authFetch } from "@/lib/auth-fetch";
 import { useAuth } from "@/auth/useAuth";
 import type { NocDevice } from "./types";
 import { FleetUptimeMonitor } from "./uptime/FleetUptimeMonitor";
+import { NocGlobalPolicies } from "./NocGlobalPolicies";
 
 // Re-export types for backwards compatibility
 export type { NocDevice, NocAlert } from "./types";
@@ -132,9 +134,9 @@ function AgentDownloadPanel() {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export function NocDashboard() {
-  const { roles, isLabMode } = useAuth();
-  const userRole = roles[0] ?? "admin";
-  const canAddDevices = isLabMode || ["admin", "editor", "infraestructura"].includes(userRole);
+  const { isLabMode, hasMinRole, isAuthenticated } = useAuth();
+  const canAddDevices = isLabMode || hasMinRole("manager");
+  const canDeleteDevices = isLabMode || isAuthenticated;
 
   const [devices, setDevices] = useState<NocDevice[]>([]);
   const [lastRefresh, setLastRefresh] = useState(new Date());
@@ -164,6 +166,21 @@ export function NocDashboard() {
     return () => clearInterval(t);
   }, [refresh]);
 
+  async function deleteDevice(device: NocDevice) {
+    const label = device.hostname || device.ip_address || device.id;
+    if (!window.confirm(`¿Eliminar el activo "${label}"?\n\nSe borrarán métricas, alertas y logs asociados.`)) {
+      return;
+    }
+    const res = await authFetch(`/api/noc/devices/${device.id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error(data.error ?? "No se pudo eliminar el activo.");
+      return;
+    }
+    toast.success(`Activo "${label}" eliminado`);
+    void refresh(true);
+  }
+
   return (
     <>
       <FleetUptimeMonitor
@@ -173,11 +190,14 @@ export function NocDashboard() {
         onRefresh={() => void refresh()}
         refreshing={refreshing}
         canAddDevices={canAddDevices}
+        canDeleteDevices={canDeleteDevices}
+        onDeleteDevice={deleteDevice}
         onAddDevice={() => setShowAdd(true)}
         lastRefresh={lastRefresh}
       >
         <AgentDownloadPanel />
       </FleetUptimeMonitor>
+      <NocGlobalPolicies />
       {showAdd && <AddDeviceModal onClose={() => setShowAdd(false)} onAdded={() => void refresh()} />}
     </>
   );

@@ -2,7 +2,7 @@
  * Tema compartido para componentes de Case Management que usan inline styles.
  *
  * `C` resuelve a CSS variables `--cm-*` definidas en `index.css`, que cambian
- * automáticamente con el tema activo (light, dark, nexus-dark, cyber-tactical).
+ * automáticamente con el tema activo (light, dark, nexus-dark, cyber-tactical, zabbix-classic).
  *
  * `alpha(color, pct)` produce un `color-mix(in srgb, …)` válido sobre CSS vars.
  * Necesario porque `${C.cyan}30` (alpha-hex concatenado) sólo funciona con hex

@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import type { NocDevice } from "../types";
+import { NocStatusBadge } from "@/components/ui/NocStatusBadge";
 import { formatAgo } from "./helpers";
 
 interface FleetUptimeMonitorProps {
@@ -11,6 +12,8 @@ interface FleetUptimeMonitorProps {
   onRefresh: () => void;
   refreshing: boolean;
   canAddDevices: boolean;
+  canDeleteDevices?: boolean;
+  onDeleteDevice?: (device: NocDevice) => void | Promise<void>;
   onAddDevice: () => void;
   lastRefresh: Date;
   children?: ReactNode;
@@ -23,6 +26,8 @@ export function FleetUptimeMonitor({
   onRefresh,
   refreshing,
   canAddDevices,
+  canDeleteDevices = false,
+  onDeleteDevice,
   onAddDevice,
   lastRefresh,
   children,
@@ -35,11 +40,15 @@ export function FleetUptimeMonitor({
       (d.site ?? "").toLowerCase().includes(search.toLowerCase()),
   );
 
+  const online = devices.filter((d) => d.status === "online").length;
+  const offline = devices.filter((d) => d.status === "offline").length;
+  const alerting = devices.filter((d) => (d.open_alerts ?? 0) > 0 || d.status === "offline").length;
+
   return (
     <>
       <div className="ut-toolbar">
         <header className="ut-header" style={{ marginBottom: 0 }}>
-          <h1 className="ut-header__title">Centro de operaciones</h1>
+          <h2 className="ut-header__title" style={{ fontSize: "1.1rem" }}>Flota de activos</h2>
           <p className="ut-header__subtitle">
             Actualizado hace {Math.round((Date.now() - lastRefresh.getTime()) / 1000)}s
           </p>
@@ -57,12 +66,24 @@ export function FleetUptimeMonitor({
         </div>
       </div>
 
-      <article className="ut-card" style={{ maxWidth: "16rem", marginBottom: "1.25rem" }}>
-        <p className="ut-card__label">Activos monitoreados</p>
-        <p className="ut-metric__value" aria-label={`${devices.length} activos monitoreados`}>
-          {devices.length}
-        </p>
-      </article>
+      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
+        <article className="ut-card" style={{ minWidth: "7rem" }}>
+          <p className="ut-card__label">Activos</p>
+          <p className="ut-metric__value">{devices.length}</p>
+        </article>
+        <article className="ut-card" style={{ minWidth: "7rem" }}>
+          <p className="ut-card__label">Online</p>
+          <p className="ut-metric__value ut-metric__value--success">{online}</p>
+        </article>
+        <article className={`ut-card ${offline > 0 ? "noc-metric--critical" : ""}`} style={{ minWidth: "7rem" }}>
+          <p className="ut-card__label">Offline</p>
+          <p className="ut-metric__value ut-metric__value--danger">{offline}</p>
+        </article>
+        <article className={`ut-card ${alerting > 0 ? "noc-metric--critical" : ""}`} style={{ minWidth: "7rem" }}>
+          <p className="ut-card__label">En alerta</p>
+          <p className="ut-metric__value ut-metric__value--warning">{alerting}</p>
+        </article>
+      </div>
 
       <section className="ut-card" aria-labelledby="fleet-devices">
         <div className="ut-chart-head">
@@ -86,7 +107,7 @@ export function FleetUptimeMonitor({
                 <th>CPU</th>
                 <th>RTT</th>
                 <th>Último HB</th>
-                <th></th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -98,19 +119,23 @@ export function FleetUptimeMonitor({
                 </tr>
               ) : (
                 filtered.map((d) => (
-                  <tr key={d.id}>
+                  <tr
+                    key={d.id}
+                    className={
+                      d.status === "offline" || (d.open_alerts ?? 0) > 0 ? "noc-row--alerting" : undefined
+                    }
+                  >
                     <td>
-                      <span
-                        className={
+                      <NocStatusBadge
+                        status={d.status}
+                        label={
                           d.status === "online"
-                            ? "ut-metric__value--success"
+                            ? "Online"
                             : d.status === "offline"
-                              ? "ut-metric__value--danger"
-                              : "ut-metric__value--warning"
+                              ? "Offline"
+                              : d.status
                         }
-                      >
-                        {d.status === "online" ? "Up" : d.status === "offline" ? "Down" : d.status}
-                      </span>
+                      />
                     </td>
                     <td className="ut-table__host">{d.hostname}</td>
                     <td>{d.ip_address?.replace(/\/32$/, "") ?? "—"}</td>
@@ -118,9 +143,23 @@ export function FleetUptimeMonitor({
                     <td>{d.rtt_ms != null ? `${d.rtt_ms.toFixed(0)} ms` : "—"}</td>
                     <td>{formatAgo(d.last_seen_at)}</td>
                     <td>
-                      <Link to={`/noc/${d.id}`} className="ut-table__link">
-                        Detalle →
-                      </Link>
+                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", justifyContent: "flex-end" }}>
+                        <Link to={`/noc/${d.id}`} className="ut-table__link">
+                          Detalle →
+                        </Link>
+                        {canDeleteDevices && onDeleteDevice && (
+                          <button
+                            type="button"
+                            className="ut-btn ut-btn--outline ut-btn--sm"
+                            title={`Eliminar ${d.hostname}`}
+                            aria-label={`Eliminar ${d.hostname}`}
+                            onClick={() => void onDeleteDevice(d)}
+                            style={{ color: "var(--ut-danger, #f87171)" }}
+                          >
+                            <Trash2 size={14} aria-hidden /> Eliminar
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))

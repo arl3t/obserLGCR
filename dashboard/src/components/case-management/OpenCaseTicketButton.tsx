@@ -4,8 +4,21 @@ import { Link } from "react-router-dom";
 import { Loader2, Ticket } from "lucide-react";
 import { toast } from "sonner";
 import { isAxiosError } from "axios";
-import { createActionRequest, getTicketsByCase } from "@/api/tickets";
+import {
+  createActionRequest,
+  getTicketsByCase,
+  listActiveOrgs,
+  type ActiveOrg,
+} from "@/api/tickets";
 import { C, alpha } from "@/lib/cm-theme";
+
+/** Organización cliente por defecto para tickets NOC (debe existir en /tickets/orgs). */
+const PREFERRED_ORG_SLUG = "lgcr";
+
+function resolveOrgSlug(orgs: ActiveOrg[]): string {
+  const picked = orgs.find((o) => o.slug === PREFERRED_ORG_SLUG) ?? orgs[0];
+  return picked?.slug ?? PREFERRED_ORG_SLUG;
+}
 
 function errMsg(e: unknown): string {
   if (isAxiosError(e)) return e.response?.data?.error ?? e.message;
@@ -37,6 +50,15 @@ export function OpenCaseTicketButton({
 
   const openTicket = ticketsQ.data?.find((t) => t.status !== "CERRADO");
 
+  const orgsQ = useQuery({
+    queryKey: ["active-orgs"],
+    queryFn: () => listActiveOrgs(),
+    staleTime: 60_000,
+  });
+
+  const needsOrg = (ticketsQ.data ?? []).length === 0;
+  const orgReady = !needsOrg || !orgsQ.isLoading;
+
   const mut = useMutation({
     mutationFn: async () => {
       const title = hostname
@@ -45,12 +67,17 @@ export function OpenCaseTicketButton({
       const rationale =
         recommendedAction?.trim() ||
         "Incidente generado desde alerta NOC (dispositivo sin heartbeat / caída detectada).";
+      const linked = ticketsQ.data ?? [];
+      const orgSlug = linked.length === 0
+        ? resolveOrgSlug(orgsQ.data ?? await listActiveOrgs())
+        : undefined;
       return createActionRequest({
         caseId,
         actionType: "OTRO",
         title,
         rationale,
         urgency: "HIGH",
+        orgSlug,
       });
     },
     onSuccess: () => {
@@ -98,7 +125,8 @@ export function OpenCaseTicketButton({
     <button
       type="button"
       onClick={() => void handleClick()}
-      disabled={busy || mut.isPending}
+      disabled={busy || mut.isPending || !orgReady}
+      title={!orgReady ? "Cargando organizaciones…" : undefined}
       style={{
         display: "inline-flex",
         alignItems: "center",

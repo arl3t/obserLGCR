@@ -60,6 +60,32 @@ export interface DetectionFamilySources {
   sources: DetectionSourceDetail[];
 }
 
+export interface DetectionTimelineBucket {
+  bucket: string;
+  total: number;
+  critical: number;
+}
+
+export interface DetectionStats {
+  hours: number;
+  total: number;
+  critical: number;
+  warn: number;
+  hosts: number;
+  source_logs: number;
+  last_event_at: string | null;
+  severity: { severity: string; count: number }[];
+  timeline: DetectionTimelineBucket[];
+  top_families: { family: string; count: number }[];
+}
+
+export async function fetchDetectionStats(hours = 24) {
+  const { data } = await api.get<{ ok: boolean } & DetectionStats>("/api/detection/stats", {
+    params: { hours },
+  });
+  return data;
+}
+
 export async function fetchDetectionKpis() {
   const { data } = await api.get<{ ok: boolean; families: DetectionFamilyKpi[] }>(
     "/api/detection/kpis",
@@ -88,6 +114,7 @@ export async function fetchDetectionEvents(params: {
   source_log?: string;
   family?: string;
   severity?: string;
+  q?: string;
 }) {
   const { data } = await api.get<{
     ok: boolean;

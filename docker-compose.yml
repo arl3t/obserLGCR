@@ -7,9 +7,10 @@
 #
 services:
   postgres:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:latest-pg16
     container_name: obserlgcr-postgres
     restart: unless-stopped
+    command: ["postgres", "-c", "shared_preload_libraries=timescaledb"]
     environment:
       POSTGRES_USER: ${PG_USER:-obserlgcr}
       POSTGRES_PASSWORD: ${PG_PASSWORD:-obserlgcr}
@@ -51,10 +52,17 @@ services:
       PLATFORM_AUTH_ENABLED: ${PLATFORM_AUTH_ENABLED:-true}
       AGENT_JWT_SECRET: ${AGENT_JWT_SECRET:-obserlgcr-agent-dev-secret-change-me}
       NOC_WATCHER_INTERVAL_MS: ${NOC_WATCHER_INTERVAL_MS:-30000}
+      GOVERNANCE_INCIDENT_WORKER: ${GOVERNANCE_INCIDENT_WORKER:-true}
+      GOVERNANCE_INCIDENT_INTERVAL_MS: ${GOVERNANCE_INCIDENT_INTERVAL_MS:-15000}
+      NOC_LAKE_ROOT: ${NOC_LAKE_ROOT:-/app/data/lake/noc}
+      NOC_DEFAULT_REGION: ${NOC_DEFAULT_REGION:-global}
       CRON_SECRET: ${CRON_SECRET:-}
       DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:8080}
+      SOCKETIO_CORS_ORIGINS: ${SOCKETIO_CORS_ORIGINS:-}
     ports:
       - "${API_PORT:-8787}:8787"
+    volumes:
+      - obserlgcr-lake:/app/data/lake
 
   dashboard:
     build:
@@ -69,8 +77,28 @@ services:
     restart: unless-stopped
     depends_on:
       - api
+      - ipam
     ports:
       - "${DASHBOARD_PORT:-8080}:80"
 
+  ipam:
+    build:
+      context: ./ipam
+    image: obserlgcr-ipam:local
+    container_name: obserlgcr-ipam
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${PG_USER:-obserlgcr}:${PG_PASSWORD:-obserlgcr}@postgres:5432/${PG_DATABASE:-obserlgcr}
+      AGENT_JWT_SECRET: ${AGENT_JWT_SECRET:-obserlgcr-agent-dev-secret-change-me}
+      PLATFORM_AUTH_ENABLED: ${PLATFORM_AUTH_ENABLED:-true}
+      NMAP_TIMEOUT_SEC: ${NMAP_TIMEOUT_SEC:-600}
+      NMAP_HOST_TIMEOUT_SEC: ${NMAP_HOST_TIMEOUT_SEC:-5}
+    ports:
+      - "${IPAM_PORT:-8790}:8000"
+
 volumes:
   obserlgcr-pgdata:
+  obserlgcr-lake:

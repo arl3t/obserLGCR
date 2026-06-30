@@ -9,5 +9,5 @@ RUN npm install --omit=dev --no-audit --no-fund
 COPY . .
 
 EXPOSE 8787
-# Aplica migraciones (idempotente) y arranca el API.
-CMD ["sh", "-c", "node migrate.mjs && node server.mjs"]
+# Aplica migraciones (idempotente; fallos legacy no bloquean arranque) y escucha API.
+CMD ["sh", "-c", "node migrate.mjs || true; exec node server.mjs"]

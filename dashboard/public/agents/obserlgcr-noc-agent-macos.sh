@@ -167,12 +167,27 @@ collect_metrics() {
   NOC_BW_OUT=$(( (tx2 - tx1) * 8 ))
 }
 
+collect_disk() {
+  NOC_DISK_JSON="[]"
+  if command -v df &>/dev/null; then
+    NOC_DISK_JSON=$(df -kP 2>/dev/null | awk 'NR>1 && $1 !~ /^\/dev\/loop/ {
+      gsub(/%/,"",$5); print $6"|"$1"|"$2"|"$3"|"$5
+    }' | while IFS='|' read -r mp dev size used pct; do
+      [[ -z "$mp" ]] && continue
+      jq -n --arg mp "$mp" --arg dev "$dev" --argjson size "$size" --argjson used "$used" --argjson pct "$pct" \
+        '{mountpoint:$mp,device:$dev,total_bytes:($size*1024),used_bytes:($used*1024),usage_pct:$pct}'
+    done | jq -s '.')
+  fi
+  [[ -z "$NOC_DISK_JSON" || "$NOC_DISK_JSON" == "null" ]] && NOC_DISK_JSON="[]"
+}
+
 send_heartbeat() {
   local token="$1"
   local device_id=""
   [[ -f "$NOC_DEVICE_FILE" ]] && device_id=$(cat "$NOC_DEVICE_FILE" 2>/dev/null || echo "")
 
   collect_metrics
+  collect_disk
 
   local metrics_json
   metrics_json=$(jq -n \
@@ -187,7 +202,10 @@ send_heartbeat() {
   payload=$(jq -n \
     --arg hostname "$HOSTNAME_VAL" --arg ip "${IP_ADDRESS:-}" --arg mac "${MAC_ADDRESS:-}" \
     --arg agent_v "$AGENT_VERSION" --arg device_id "$device_id" --argjson metrics "$metrics_json" \
-    '{hostname:$hostname, ip_address:$ip, mac_address:$mac, agent_version:$agent_v, metrics:$metrics}
+    --argjson disk "$NOC_DISK_JSON" \
+    --arg log_msg "NOC_HB host=$HOSTNAME_VAL arch=$OS_ARCH cpu=${NOC_CPU_PCT}% mem=${NOC_MEM_PCT}%" \
+    '{hostname:$hostname, ip_address:$ip, mac_address:$mac, agent_version:$agent_v, metrics:$metrics, disk:$disk,
+      log_lines:[{severity:"info",source:"noc-agent",message:$log_msg}]}
      + (if $device_id != "" then {device_id:$device_id} else {} end)')
 
   local response http_code body

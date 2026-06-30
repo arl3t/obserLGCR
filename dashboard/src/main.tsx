@@ -12,6 +12,9 @@ import { queryClient } from "@/store/query-client";
 import "./index.css";
 import "./styles/obserlgcr.css";
 import "./styles/obser-uptime.css";
+import "./styles/noc-modern.css";
+import "./styles/detection-modern.css";
+import "./styles/ipam-modern.css";
 
 initSentry();
 

@@ -9,6 +9,21 @@ import { logger } from "../logger.mjs";
 import { runNocHeartbeatWatcher } from "../services/nocHeartbeatWatcher.mjs";
 import { openCaseFromNocAlert, syncNocDownIncidents } from "../services/nocIncidentBridge.mjs";
 import { verifyAgentToken } from "../services/agentAuth.mjs";
+import {
+  ingestHeartbeatTimescale,
+  queryMetricSeries,
+  queryDeviceLogs,
+  queryLatestMetrics,
+  insertSystemLog,
+} from "../services/nocTimescale.mjs";
+import { processIncidentsQueueBatch } from "../services/governanceIncidentWorker.mjs";
+import { exportNocLake } from "../services/nocLakeExportService.mjs";
+import { ingestSnmpTelegrafBatch } from "../services/snmpIngestService.mjs";
+import {
+  getSnmpSettings,
+  updateSnmpSettings,
+  syncSnmpTargetForDevice,
+} from "../services/nocSettingsService.mjs";
 
 const NOC_AGENT_TOKEN = (process.env.NOC_AGENT_TOKEN ?? "").trim();
 const CRON_SECRET = (process.env.CRON_SECRET ?? process.env.INTERNAL_SERVICE_TOKEN ?? "").trim();
@@ -108,39 +123,59 @@ export default function nocRouter() {
   // ── Heartbeat (agentes) ─────────────────────────────────────────────────────
   router.post("/heartbeat", requireNocAgent, async (req, res) => {
     try {
-      const { hostname, ip_address, mac_address, agent_version, device_id, metrics = {} } = req.body ?? {};
+      const {
+        hostname,
+        ip_address,
+        mac_address,
+        agent_version,
+        device_id,
+        metrics = {},
+        site,
+        region,
+        iface,
+        disk = [],
+        log_lines = [],
+      } = req.body ?? {};
       if (!hostname) {
         return res.status(400).json({ success: false, error: "hostname requerido." });
       }
 
+      const agentId =
+        req.headers["x-agent-id"]?.toString() ?? req.body?.agent_id ?? null;
+
       let devId = device_id ?? null;
+      let deviceSite = site ?? null;
 
       if (devId) {
         const updated = await pgQuery(
           `UPDATE noc_devices SET status='online', last_seen_at=NOW(),
              ip_address=COALESCE($2::inet, ip_address),
              mac_address=COALESCE($3, mac_address),
-             agent_version=COALESCE($4, agent_version)
-           WHERE id=$1 RETURNING id`,
-          [devId, ip_address ?? null, mac_address ?? null, agent_version ?? null],
+             agent_version=COALESCE($4, agent_version),
+             site=COALESCE($5, site)
+           WHERE id=$1 RETURNING id, site`,
+          [devId, ip_address ?? null, mac_address ?? null, agent_version ?? null, site ?? null],
         );
         if (updated.length === 0) devId = null;
+        else deviceSite = updated[0].site ?? deviceSite;
       }
 
       if (!devId) {
         const inserted = await pgQuery(
-          `INSERT INTO noc_devices (hostname, ip_address, mac_address, agent_version, status, last_seen_at)
-           VALUES ($1, $2::inet, $3, $4, 'online', NOW())
+          `INSERT INTO noc_devices (hostname, ip_address, mac_address, agent_version, site, status, last_seen_at)
+           VALUES ($1, $2::inet, $3, $4, $5, 'online', NOW())
            ON CONFLICT (hostname) DO UPDATE SET
              ip_address    = COALESCE(EXCLUDED.ip_address, noc_devices.ip_address),
              mac_address   = COALESCE(EXCLUDED.mac_address, noc_devices.mac_address),
              agent_version = COALESCE(EXCLUDED.agent_version, noc_devices.agent_version),
+             site          = COALESCE(EXCLUDED.site, noc_devices.site),
              status        = 'online',
              last_seen_at  = NOW()
-           RETURNING id`,
-          [hostname, ip_address ?? null, mac_address ?? null, agent_version ?? null],
+           RETURNING id, site`,
+          [hostname, ip_address ?? null, mac_address ?? null, agent_version ?? null, site ?? null],
         );
         devId = inserted[0].id;
+        deviceSite = inserted[0].site ?? deviceSite;
       }
 
       await pgQuery(
@@ -183,12 +218,83 @@ export default function nocRouter() {
             );
           }
         }
+
+        if (name === "rtt_ms") {
+          const [thrRow] = await pgQuery(
+            `SELECT rtt_threshold_ms AS thr FROM noc_devices WHERE id=$1`,
+            [devId],
+          );
+          const thr = parseFloat(thrRow?.thr ?? "500");
+          if (Number(val) >= thr) {
+            const existing = await pgQuery(
+              `SELECT id FROM noc_alerts WHERE device_id=$1 AND alert_type='high_rtt' AND status='open' LIMIT 1`,
+              [devId],
+            );
+            if (existing.length === 0) {
+              await pgQuery(
+                `INSERT INTO noc_alerts (device_id, alert_type, details) VALUES ($1,'high_rtt',$2)`,
+                [devId, JSON.stringify({ measured: val, threshold: thr })],
+              );
+            }
+          } else {
+            await pgQuery(
+              `UPDATE noc_alerts SET status='resolved', resolved_at=NOW()
+               WHERE device_id=$1 AND alert_type='high_rtt' AND status='open'`,
+              [devId],
+            );
+          }
+        }
+      }
+
+      await ingestHeartbeatTimescale({
+        nodeId: devId,
+        hostname,
+        site: deviceSite,
+        region: region ?? deviceSite ?? "global",
+        status: "online",
+        metrics,
+        agentVersion: agent_version,
+        agentId,
+        iface: iface ?? "default",
+        diskMounts: Array.isArray(disk) ? disk : [],
+        logLines: Array.isArray(log_lines) ? log_lines : [],
+      });
+
+      if (!Array.isArray(log_lines) || log_lines.length === 0) {
+        insertSystemLog({
+          nodeId: devId,
+          hostname,
+          site: deviceSite,
+          region: region ?? deviceSite ?? "global",
+          severity: "info",
+          source: "noc-agent",
+          logType: "agent",
+          message: `Heartbeat cpu=${metrics.cpu_pct ?? "?"}% mem=${metrics.mem_pct ?? "?"}% rtt=${metrics.rtt_ms ?? "?"}ms`,
+          raw: { metrics, agent_version, agent_id: agentId },
+        }).catch(() => {});
       }
 
       return res.json({ success: true, device_id: devId });
     } catch (err) {
       logger.error("noc_heartbeat_error", { msg: err.message });
       return res.status(500).json({ success: false, error: "Error interno." });
+    }
+  });
+
+  // ── SNMP Telegraf ingest ────────────────────────────────────────────────────
+  router.post("/snmp/ingest", requireNocAgent, async (req, res) => {
+    try {
+      const result = await ingestSnmpTelegrafBatch(req.body);
+      return res.status(201).json({ success: true, ...result });
+    } catch (err) {
+      logger.error("snmp_ingest_error", { msg: err.message });
+      if (err.code === "42P01") {
+        return res.status(503).json({
+          success: false,
+          error: "Esquema SNMP no migrado. Ejecute 124_snmp_telegraf_timescale.sql",
+        });
+      }
+      return res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -208,6 +314,16 @@ export default function nocRouter() {
       const rows = await pgQuery(`${DEVICES_LIST_SQL} ORDER BY
         CASE d.status WHEN 'offline' THEN 0 WHEN 'degraded' THEN 1 WHEN 'online' THEN 2 ELSE 3 END,
         d.hostname ASC`);
+
+      for (const row of rows) {
+        const latest = await queryLatestMetrics(row.id);
+        if (latest) {
+          if (latest.cpu_pct != null) row.cpu_pct = parseFloat(latest.cpu_pct);
+          if (latest.mem_pct != null) row.mem_pct = parseFloat(latest.mem_pct);
+          if (latest.rtt_ms != null) row.rtt_ms = parseFloat(latest.rtt_ms);
+        }
+      }
+
       return res.json({ success: true, data: rows, devices: rows, meta: { total: rows.length } });
     } catch (err) {
       logger.error("noc_devices_list", { msg: err.message });
@@ -261,6 +377,8 @@ export default function nocRouter() {
         ],
       );
 
+      await syncSnmpTargetForDevice(row);
+
       return res.status(201).json({ success: true, data: row, device: row });
     } catch (err) {
       logger.error("noc_devices_create", { msg: err.message });
@@ -287,17 +405,21 @@ export default function nocRouter() {
       const useMinute = ["1h", "2h", "6h"].includes(windowKey);
       const truncUnit = useMinute ? "minute" : "hour";
 
-      const rows = await pgQuery(
-        `SELECT DATE_TRUNC($1, recorded_at) AS t, AVG(value)::NUMERIC(15,4) AS v
-         FROM noc_metrics
-         WHERE device_id = $2 AND metric_name = $3
-           AND recorded_at >= NOW() - $4::INTERVAL
-         GROUP BY DATE_TRUNC($1, recorded_at)
-         ORDER BY t ASC`,
-        [truncUnit, id, metric, METRIC_WINDOWS[windowKey]],
-      );
+      let data = await queryMetricSeries(id, metric, METRIC_WINDOWS[windowKey]);
 
-      const data = rows.map((r) => ({ t: r.t, v: parseFloat(r.v) }));
+      if (!data || data.length === 0) {
+        const rows = await pgQuery(
+          `SELECT DATE_TRUNC($1, recorded_at) AS t, AVG(value)::NUMERIC(15,4) AS v
+           FROM noc_metrics
+           WHERE device_id = $2 AND metric_name = $3
+             AND recorded_at >= NOW() - $4::INTERVAL
+           GROUP BY DATE_TRUNC($1, recorded_at)
+           ORDER BY t ASC`,
+          [truncUnit, id, metric, METRIC_WINDOWS[windowKey]],
+        );
+        data = rows.map((r) => ({ t: r.t, v: parseFloat(r.v) }));
+      }
+
       return res.json({ success: true, metric, window: windowKey, data });
     } catch (err) {
       logger.error("noc_device_metrics", { msg: err.message });
@@ -318,14 +440,18 @@ export default function nocRouter() {
         vals.push(severity);
       }
 
-      const rows = await pgQuery(
-        `SELECT id, device_id, ts, severity, source, message, raw
-         FROM noc_logs
-         WHERE ${conditions.join(" AND ")}
-         ORDER BY ts DESC
-         LIMIT 100`,
-        vals,
-      );
+      let rows = await queryDeviceLogs(id, { severity: severity ?? null, limit: 100 });
+
+      if (!rows) {
+        rows = await pgQuery(
+          `SELECT id, device_id, ts, severity, source, message, raw
+           FROM noc_logs
+           WHERE ${conditions.join(" AND ")}
+           ORDER BY ts DESC
+           LIMIT 100`,
+          vals,
+        );
+      }
 
       return res.json({ success: true, data: rows, logs: rows, meta: { total: rows.length } });
     } catch (err) {
@@ -386,11 +512,29 @@ export default function nocRouter() {
 
   router.delete("/devices/:id", async (req, res) => {
     try {
-      const result = await pgQuery("DELETE FROM noc_devices WHERE id = $1 RETURNING id", [req.params.id]);
-      if (result.length === 0) {
+      const [dev] = await pgQuery(
+        `SELECT id, hostname, ip_address::text AS ip_address FROM noc_devices WHERE id = $1`,
+        [req.params.id],
+      );
+      if (!dev) {
         return res.status(404).json({ success: false, error: "Dispositivo no encontrado." });
       }
-      return res.json({ success: true });
+
+      try {
+        await pgQuery(
+          `DELETE FROM snmp_targets
+            WHERE noc_device_id = $1
+               OR ($2::text IS NOT NULL AND device_ip = $2::inet)`,
+          [dev.id, dev.ip_address],
+        );
+      } catch (snmpErr) {
+        if (snmpErr.code !== "42P01") {
+          logger.warn("noc_device_delete_snmp_target", { id: dev.id, msg: snmpErr.message });
+        }
+      }
+
+      await pgQuery(`DELETE FROM noc_devices WHERE id = $1`, [dev.id]);
+      return res.json({ success: true, data: { id: dev.id, hostname: dev.hostname } });
     } catch (err) {
       logger.error("noc_device_delete", { msg: err.message });
       return res.status(500).json({ success: false, error: "Error interno del servidor." });
@@ -489,6 +633,25 @@ export default function nocRouter() {
     } catch (err) {
       logger.error("noc_incidents_sync", { msg: err.message });
       return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  router.get("/cron/governance-worker", requireCronSecret, async (_req, res) => {
+    try {
+      const result = await processIncidentsQueueBatch();
+      return res.json({ ok: true, ...result });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  router.get("/cron/lake-export", requireCronSecret, async (req, res) => {
+    try {
+      const dt = req.query.dt?.toString();
+      const result = await exportNocLake({ dt });
+      return res.json({ ok: true, ...result });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: err.message });
     }
   });
 
@@ -646,6 +809,62 @@ export default function nocRouter() {
     } catch (err) {
       logger.error("noc_action_patch", { msg: err.message });
       return res.status(500).json({ success: false, error: "Error interno del servidor." });
+    }
+  });
+
+  // ── Configuración NOC (SNMP, etc.) ─────────────────────────────────────────
+  router.get("/settings/snmp", async (_req, res) => {
+    try {
+      const data = await getSnmpSettings();
+      const { checkSnmpDiscoveryAvailable } = await import("../services/snmpDiscoveryService.mjs");
+      const mod = await checkSnmpDiscoveryAvailable();
+      return res.json({ success: true, data: { ...data, discovery_module: mod } });
+    } catch (err) {
+      logger.error("noc_snmp_settings_get", { msg: err.message });
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  router.patch("/settings/snmp", async (req, res) => {
+    try {
+      const b = req.body ?? {};
+      const data = await updateSnmpSettings(b);
+      return res.json({ success: true, data });
+    } catch (err) {
+      logger.error("noc_snmp_settings_patch", { msg: err.message });
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  router.post("/snmp/discover", async (req, res) => {
+    try {
+      const { checkSnmpDiscoveryAvailable, runSnmpDiscovery } = await import(
+        "../services/snmpDiscoveryService.mjs",
+      );
+      const mod = await checkSnmpDiscoveryAvailable();
+      if (!mod.available) {
+        return res.status(503).json({
+          success: false,
+          error: `Módulo SNMP no disponible (${mod.error}). Reconstruya la API: docker compose build api && docker compose up -d api`,
+        });
+      }
+
+      const b = req.body ?? {};
+      if (!b.cidr?.trim()) {
+        return res.status(400).json({ success: false, error: "cidr requerido (ej. 192.168.1.0/24)." });
+      }
+      const data = await runSnmpDiscovery({
+        cidr: b.cidr.trim(),
+        communities: b.communities,
+        port: b.port,
+        site: b.site,
+        register: b.register !== false,
+      });
+      return res.json({ success: true, data });
+    } catch (err) {
+      logger.error("noc_snmp_discover", { msg: err.message, stack: err.stack });
+      const status = err.message?.includes("inválido") || err.message?.includes("demasiado") ? 400 : 500;
+      return res.status(status).json({ success: false, error: err.message });
     }
   });
 

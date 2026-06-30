@@ -260,6 +260,101 @@ export default function detectionRouter() {
     }
   });
 
+  /** Estadísticas globales + timeline por hora. */
+  router.get("/stats", async (req, res) => {
+    try {
+      const hours = Math.min(Math.max(parseInt(req.query.hours ?? "24", 10) || 24, 1), 168);
+      const interval = `${hours} hours`;
+
+      const [totals] = await pgQuery(
+        `SELECT
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE severity IN ('critical', 'error'))::int AS critical,
+           COUNT(*) FILTER (WHERE severity = 'warn')::int AS warn,
+           COUNT(DISTINCT hostname) FILTER (WHERE hostname IS NOT NULL)::int AS hosts,
+           COUNT(DISTINCT source_log)::int AS source_logs,
+           MAX(event_time) AS last_event_at
+         FROM detection_events
+         WHERE event_time >= NOW() - $1::interval`,
+        [interval],
+      );
+
+      const severityRows = await pgQuery(
+        `SELECT severity, COUNT(*)::int AS count
+           FROM detection_events
+          WHERE event_time >= NOW() - $1::interval
+          GROUP BY severity
+          ORDER BY count DESC`,
+        [interval],
+      );
+
+      const timelineRows = await pgQuery(
+        `SELECT
+           date_trunc('hour', event_time) AS bucket,
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE severity IN ('critical', 'error'))::int AS critical
+         FROM detection_events
+         WHERE event_time >= NOW() - $1::interval
+         GROUP BY 1
+         ORDER BY 1`,
+        [interval],
+      );
+
+      const familyRows = await pgQuery(
+        `SELECT sensor_family AS family, COUNT(*)::int AS count
+           FROM detection_events
+          WHERE event_time >= NOW() - $1::interval
+            AND sensor_family IS NOT NULL
+          GROUP BY sensor_family
+          ORDER BY count DESC
+          LIMIT 8`,
+        [interval],
+      );
+
+      res.json({
+        ok: true,
+        hours,
+        total: totals?.total ?? 0,
+        critical: totals?.critical ?? 0,
+        warn: totals?.warn ?? 0,
+        hosts: totals?.hosts ?? 0,
+        source_logs: totals?.source_logs ?? 0,
+        last_event_at: totals?.last_event_at ?? null,
+        severity: severityRows,
+        timeline: timelineRows.map((row) => ({
+          bucket: row.bucket,
+          total: row.total,
+          critical: row.critical,
+        })),
+        top_families: familyRows,
+      });
+    } catch (err) {
+      logger.error("detection_stats", { msg: err.message });
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  /** Detalle de un evento. */
+  router.get("/events/:id", async (req, res) => {
+    try {
+      const rows = await pgQuery(
+        `SELECT id, source_log, sensor_family, severity, hostname, source, message,
+                raw, src_ip::text AS src_ip, dst_ip::text AS dst_ip, rule_id,
+                event_time, ingested_at, agent_id
+           FROM detection_events
+          WHERE id = $1::uuid`,
+        [req.params.id],
+      );
+      if (!rows.length) {
+        return res.status(404).json({ ok: false, error: "Evento no encontrado." });
+      }
+      res.json({ ok: true, data: rows[0] });
+    } catch (err) {
+      logger.error("detection_event_get", { msg: err.message });
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   /** Listar eventos con filtros. */
   router.get("/events", async (req, res) => {
     try {
@@ -269,6 +364,7 @@ export default function detectionRouter() {
       const sourceLog = String(req.query.source_log ?? "").trim();
       const family = String(req.query.family ?? "").trim();
       const severity = String(req.query.severity ?? "").trim();
+      const q = String(req.query.q ?? "").trim().slice(0, 200);
 
       const where = ["event_time >= NOW() - $1::interval"];
       const params = [`${hours} hours`];
@@ -285,6 +381,13 @@ export default function detectionRouter() {
       if (severity && VALID_SEVERITIES.has(severity)) {
         where.push(`severity = $${idx++}`);
         params.push(severity);
+      }
+      if (q) {
+        where.push(
+          `(message ILIKE $${idx} OR hostname ILIKE $${idx} OR src_ip::text ILIKE $${idx} OR dst_ip::text ILIKE $${idx} OR rule_id ILIKE $${idx})`,
+        );
+        params.push(`%${q}%`);
+        idx++;
       }
 
       params.push(limit, offset);

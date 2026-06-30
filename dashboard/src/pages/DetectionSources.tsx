@@ -1,9 +1,10 @@
 /**
- * DetectionSources — Gestión de tipos de log y configuración del shipper.
+ * DetectionSources — Catálogo source_log, datos recibidos y shipper.
  */
 
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, RefreshCw, Terminal, ToggleLeft, ToggleRight } from "lucide-react";
+import { Download, ExternalLink, RefreshCw, Terminal, ToggleLeft, ToggleRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { fetchDetectionSources, patchDetectionFamily } from "@/api/detection";
@@ -19,6 +20,17 @@ const CATEGORY_LABEL: Record<string, string> = {
   email: "Email",
   other: "Otro",
 };
+
+const INGEST_FIELDS = [
+  { field: "source_log", required: true, desc: "Clave del catálogo (suricata, wazuh_alerts, …)" },
+  { field: "message", required: true, desc: "Texto legible de la alerta o línea de log" },
+  { field: "severity", required: false, desc: "debug | info | warn | error | critical" },
+  { field: "hostname", required: false, desc: "Host origen del evento" },
+  { field: "src_ip / dst_ip", required: false, desc: "IPs extraídas (Suricata, firewall)" },
+  { field: "rule_id", required: false, desc: "SID, regla Wazuh, etc." },
+  { field: "raw", required: false, desc: "JSON original parseado por el shipper" },
+  { field: "event_time", required: false, desc: "ISO8601; default = ahora" },
+];
 
 export function DetectionSourcesPage() {
   const qc = useQueryClient();
@@ -39,13 +51,18 @@ export function DetectionSourcesPage() {
     },
   });
 
+  const total24h = sources.reduce(
+    (acc, f) => acc + f.sources.reduce((a, s) => a + s.events_24h, 0),
+    0,
+  );
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-5 p-6">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">Fuentes de logs</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Fuentes y contrato de datos</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Catálogo de tipos admitidos por <code className="text-cyan-400/80">source_log</code> y script de ingesta.
+            Qué acepta la API, cómo llegan los eventos y qué tipos <code>source_log</code> están habilitados.
           </p>
         </div>
         <Button
@@ -60,36 +77,79 @@ export function DetectionSourcesPage() {
         </Button>
       </header>
 
-      <div className="obser-panel overflow-hidden">
-        <div className="obser-panel-header">
-          <p className="flex items-center gap-2 text-[13px] font-medium">
-            <Download size={14} className="text-cyan-400" />
-            Script de ingesta
-          </p>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="obser-panel overflow-hidden">
+          <div className="obser-panel-header">
+            <p className="text-[13px] font-medium">Datos que recibe cada evento</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="border-b border-border text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <th className="px-4 py-2 text-left">Campo</th>
+                  <th className="px-4 py-2 text-left">Descripción</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {INGEST_FIELDS.map((row) => (
+                  <tr key={row.field}>
+                    <td className="px-4 py-2">
+                      <code className="text-cyan-400/90">{row.field}</code>
+                      {row.required && (
+                        <Badge variant="outline" className="ml-2 text-[9px]">
+                          req
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-muted-foreground">{row.desc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="border-t border-border px-4 py-3 text-[11px] text-muted-foreground">
+            Endpoint: <code className="text-cyan-400/80">POST /api/detection/ingest</code> · lote máx. 500 · auth
+            agente JWT. Se persiste en <code>detection_events</code>.
+          </div>
         </div>
-        <div className="space-y-3 p-4">
-          <p className="text-[12px] text-muted-foreground">
-            El shipper lee archivos locales o stdin, etiqueta cada línea con un{" "}
-            <code>source_log</code> y envía lotes a <code>POST /api/detection/ingest</code>.
-          </p>
-          <a
-            href="/agents/obserlgcr-detection-shipper.sh"
-            download="obserlgcr-detection-shipper.sh"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-500 px-3 py-2 text-[12px] font-medium text-slate-950 hover:bg-cyan-400"
-          >
-            <Download size={12} /> Descargar obserlgcr-detection-shipper.sh
-          </a>
-          <div>
-            <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              <Terminal size={10} /> Instalación rápida
+
+        <div className="obser-panel overflow-hidden">
+          <div className="obser-panel-header">
+            <p className="flex items-center gap-2 text-[13px] font-medium">
+              <Download size={14} className="text-cyan-400" />
+              Script de ingesta (shipper)
             </p>
-            <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-[#0c1524] p-3 text-[10px] leading-relaxed text-emerald-400">
+          </div>
+          <div className="space-y-3 p-4">
+            <p className="text-[12px] text-muted-foreground">
+              Corre en el host donde están los logs. Lee JSONL/syslog, normaliza severidad e IPs y envía lotes al
+              API. Hoy: <strong className="text-foreground">{formatNumber(total24h)}</strong> eventos 24h desde{" "}
+              {sources.length} familias.
+            </p>
+            <a
+              href="/agents/obserlgcr-detection-shipper.sh"
+              download="obserlgcr-detection-shipper.sh"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-500 px-3 py-2 text-[12px] font-medium text-slate-950 hover:bg-cyan-400"
+            >
+              <Download size={12} /> Descargar shipper
+            </a>
+            <div>
+              <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <Terminal size={10} /> Instalación
+              </p>
+              <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-[#0c1524] p-3 text-[10px] leading-relaxed text-emerald-400">
 {`chmod +x obserlgcr-detection-shipper.sh
 ./obserlgcr-detection-shipper.sh --setup
-# Enviar un archivo como suricata:
 ./obserlgcr-detection-shipper.sh --tail suricata /var/log/suricata/eve.json
-# Varias fuentes (ver shipper.conf tras --setup)`}
-            </pre>
+./obserlgcr-detection-shipper.sh --tail wazuh_alerts /var/ossec/logs/alerts/alerts.json`}
+              </pre>
+            </div>
+            <Link
+              to="/detection?tab=explorer"
+              className="inline-flex items-center gap-1 text-[12px] text-cyan-400 hover:underline"
+            >
+              Ver eventos ingeridos <ExternalLink className="h-3 w-3" />
+            </Link>
           </div>
         </div>
       </div>
@@ -106,9 +166,12 @@ export function DetectionSourcesPage() {
                   <Badge variant="outline" className="text-[10px]">
                     {CATEGORY_LABEL[fam.category] ?? fam.category}
                   </Badge>
+                  <Badge variant="outline" className="obser-mono text-[10px]">
+                    {fam.family}
+                  </Badge>
                   {!fam.enabled && (
                     <Badge variant="outline" className="border-amber-500/40 text-[10px] text-amber-400">
-                      off
+                      familia off
                     </Badge>
                   )}
                 </div>
@@ -144,7 +207,12 @@ export function DetectionSourcesPage() {
                     {fam.sources.map((s) => (
                       <tr key={s.source_log} className="hover:bg-cyan-500/5">
                         <td className="px-4 py-2">
-                          <span className="obser-mono font-medium text-foreground">{s.source_log}</span>
+                          <Link
+                            to={`/detection?tab=explorer&source_log=${encodeURIComponent(s.source_log)}`}
+                            className="obser-mono font-medium text-cyan-400/90 hover:underline"
+                          >
+                            {s.source_log}
+                          </Link>
                           <p className="text-[11px] text-muted-foreground">{s.sensor_name}</p>
                         </td>
                         <td className="px-4 py-2 text-muted-foreground">{s.network_zone}</td>
@@ -163,6 +231,16 @@ export function DetectionSourcesPage() {
           ))}
         </div>
       )}
+
+      <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-[12px] text-muted-foreground">
+        <strong className="text-amber-400">No entra por Detección:</strong> métricas SNMP/NOC, heartbeats de
+        agentes, gobernanza de software (<code>noc_down</code>, <code>noc_metrics</code>,{" "}
+        <code>software_governance</code>) — esos flujos crean incidentes vía cola NOC en{" "}
+        <Link to="/gestion" className="text-amber-400/90 hover:underline">
+          Gestión
+        </Link>
+        .
+      </div>
     </div>
   );
 }
