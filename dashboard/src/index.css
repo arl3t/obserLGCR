@@ -1,0 +1,581 @@
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+
+/* Fuentes del tema Cyber Tactical: Inter para UI y JetBrains Mono para code/numbers.
+ * Cargadas desde Google Fonts con preconnect y display=swap (cero FOIT). Si el
+ * usuario no usa Cyber Tactical, el costo de bytes adicional es ~40KB inicial. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+/*
+ * Tema: next-themes pone la clase `dark` en <html>. Los tokens por defecto en @theme son modo claro;
+ * .dark reasigna variables para modo oscuro (antes todo era oscuro y “Claro” no cambiaba nada).
+ */
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  /* ── Modo claro (sin .dark en html) ─────────────────────────────────────
+   * Paleta SOC light theme — slate + tailwind-800 accents.
+   * Todos los pares texto/fondo cumplen ≥7:1 (AAA en su mayoría).
+   *
+   *   Fondo / cards / bordes
+   *     bg            #f8fafc (slate-50)
+   *     card          #ffffff
+   *     border        #e2e8f0 (slate-200)
+   *   Texto
+   *     principal     #0f172a (slate-900)  · 14.5:1
+   *     secundario    #334155 (slate-700)  ·  8.1:1
+   *     muted         #64748b (slate-500)  ·  5.3:1
+   *   Acentos (tailwind-800, todos ≥7:1)
+   *     blue          #1e40af   · primary / sidebar activo
+   *     green         #166534   · resuelto / OK
+   *     amber         #854d0e   · escalado / pendiente
+   *     rose          #9f1239   · critical / SLA vencido
+   *
+   * Los acentos van oscuros (800) porque sobre fondo blanco un slot 600
+   * cae a ~4:1 y se vuelve ilegible para texto pequeño en chips/labels.
+   */
+  /* Brand accent: rojo Trend Micro #d81e2e — usado para CTAs primarios,
+   * focus ring, header highlights y enlaces de marca. Distinto del rojo
+   * de severidad CRITICAL (#9f1239 rose-800, más burgundy) para que el
+   * operador SOC no confunda "acción primaria" con "alerta crítica". */
+  --color-border: #e2e8f0;
+  --color-input: #cbd5e1;                  /* slate-300 — un step más oscuro para que el input "se note" */
+  --color-ring: #d81e2e;                   /* brand red — focus visible y consistente con el accent */
+  --color-background: #f8f9fb;             /* slightly más neutro que slate-50 */
+  --color-foreground: #0f172a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+  --color-muted: #f1f5f9;                  /* slate-100 */
+  --color-muted-foreground: #64748b;       /* slate-500 — 5.3:1 vs blanco */
+  --color-accent: #fff1f2;                 /* rose-50 — hover sutil de items activos (suave del brand red) */
+  --color-accent-foreground: #0f172a;
+  --color-primary: #d81e2e;                /* brand red — 5.0:1 vs blanco (AA holgado) */
+  --color-primary-foreground: #ffffff;
+  --color-destructive: #9f1239;            /* rose-800 — 7.1:1, mantenido distinto del brand red */
+  --color-destructive-foreground: #ffffff;
+  --color-sidebar: #f1f5f9;
+  --color-sidebar-border: #e2e8f0;
+  --color-chart-1: #1e40af;                /* blue-800 — primer serie data viz (no compite con brand red) */
+  --color-chart-2: #155e75;                /* cyan-800 */
+  --color-chart-3: #854d0e;                /* amber-800 */
+  --color-chart-4: #6b21a8;                /* purple-800 */
+
+  /* Case Management paleta — usada por inline styles del
+   * CaseManagementDashboard. Misma paleta SOC, mapeada a sus roles. */
+  --cm-bg: #f8f9fb;
+  --cm-card: #ffffff;
+  --cm-border: #e2e8f0;
+  --cm-text: #0f172a;                      /* slate-900 — 14.5:1 */
+  --cm-text-dim: #64748b;                  /* slate-500 — 5.3:1  */
+  --cm-red: #9f1239;                       /* rose-800   — 7.1:1 */
+  --cm-orange: #854d0e;                    /* amber-800  — 6.9:1 */
+  --cm-cyan: #155e75;                      /* cyan-800   — 7.0:1 */
+  --cm-green: #166534;                     /* green-800  — 7.8:1 */
+  --cm-blue: #1e40af;                      /* blue-800   — 8.2:1 */
+  --cm-purple: #6b21a8;                    /* purple-800 — 7.5:1 */
+  --cm-info: #155e75;                      /* alias de cyan-800 para "monitoreado" */
+  --cm-neutral: #6b21a8;                   /* alias de purple-800 para "auto-cerrado/archivo" */
+
+  /* ── Paleta semántica extendida — toda la plataforma ────────────────────
+   * Tokens semánticos con variantes -hover y -bg suave. Pareadas para que
+   * cualquier elemento (chip, banner, botón) tenga su trío {bg, text, hover}
+   * sin necesidad de calcular alpha en runtime.
+   *
+   *   accent  = brand red Trend Micro (#d81e2e) → CTAs y branding
+   *   critical = rose-800 (#9f1239)             → severidad / alertas
+   *   blue-link = blue-800 (#1e40af)            → enlaces inline, info accents
+   *
+   *   Pares text-on-bg suave:
+   *     accent    #d81e2e sobre #fff1f2 = 5.6:1
+   *     critical  #9f1239 sobre #fff1f2 = 6.8:1
+   *     warning   #9a3412 sobre #ffedd5 = 5.9:1
+   *     analysis  #854d0e sobre #fef3c7 = 6.5:1
+   *     success   #166534 sobre #dcfce7 = 7.4:1
+   *     info      #155e75 sobre #cffafe = 6.6:1
+   *     neutral   #6b21a8 sobre #f3e8ff = 7.0:1
+   *     blue-link #1e40af sobre #dbeafe = 7.6:1
+   */
+  --accent:           #d81e2e;            /* brand red Trend Micro */
+  --accent-hover:     #b91c2c;            /* red-700 — un step más oscuro */
+  --accent-bg:        #fff1f2;            /* rose-50 — bg suave del accent */
+  --blue-link:        #1e40af;            /* blue-800 — enlaces inline e info accents */
+  --blue-link-hover:  #1e3a8a;            /* blue-900 */
+  --blue-link-bg:     #dbeafe;            /* blue-100 */
+
+  --success:          #166534;
+  --success-hover:    #14532d;            /* green-900 */
+  --success-bg:       #dcfce7;            /* green-100 */
+
+  --warning:          #9a3412;            /* orange-800 — diferenciado de analysis */
+  --warning-hover:    #7c2d12;            /* orange-900 */
+  --warning-bg:       #ffedd5;            /* orange-100 */
+
+  --analysis:         #854d0e;            /* amber-800 */
+  --analysis-hover:   #713f12;            /* amber-900 */
+  --analysis-bg:      #fef3c7;            /* amber-100 */
+
+  --critical:         #9f1239;            /* rose-800 */
+  --critical-hover:   #881337;            /* rose-900 */
+  --critical-bg:      #fff1f2;            /* rose-50  */
+
+  --info:             #155e75;            /* cyan-800 */
+  --info-hover:       #164e63;            /* cyan-900 */
+  --info-bg:          #cffafe;            /* cyan-100 */
+
+  --neutral:          #6b21a8;            /* purple-800 */
+  --neutral-hover:    #581c87;            /* purple-900 */
+  --neutral-bg:       #f3e8ff;            /* purple-100 */
+
+  /* Bordes — 3 niveles de jerarquía */
+  --border-subtle:    #f1f5f9;            /* slate-100 — separadores internos */
+  --border-strong:    #cbd5e1;            /* slate-300 — inputs, dividers fuertes */
+
+  /* Texto / fondos disabled */
+  --text-disabled:    #94a3b8;            /* slate-400 */
+  --bg-disabled:      #f1f5f9;
+
+  /* Interacción */
+  --row-hover:        #f1f5f9;            /* fila hover en tablas/listados */
+  --selection:        #fee2e2;            /* red-100 — alineado con brand accent */
+  --focus-ring:       color-mix(in srgb, #d81e2e 35%, transparent);
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+    --color-border: oklch(0.28 0.02 260);
+    --color-input: oklch(0.28 0.02 260);
+    --color-ring: oklch(0.62 0.19 145);
+    --color-background: oklch(0.12 0.02 260);
+    --color-foreground: oklch(0.96 0.01 260);
+    --color-card: oklch(0.16 0.025 260);
+    --color-card-foreground: oklch(0.96 0.01 260);
+    --color-muted: oklch(0.22 0.02 260);
+    --color-muted-foreground: oklch(0.72 0.02 260);
+    --color-accent: oklch(0.22 0.04 260);
+    --color-accent-foreground: oklch(0.96 0.01 260);
+    --color-primary: oklch(0.72 0.19 145);
+    --color-primary-foreground: oklch(0.12 0.02 260);
+    --color-destructive: oklch(0.55 0.22 25);
+    --color-destructive-foreground: oklch(0.98 0.01 260);
+    --color-sidebar: oklch(0.1 0.025 260);
+    --color-sidebar-border: oklch(0.2 0.02 260);
+    --color-chart-1: oklch(0.72 0.19 145);
+    --color-chart-2: oklch(0.65 0.18 250);
+    --color-chart-3: oklch(0.75 0.16 40);
+    --color-chart-4: oklch(0.6 0.2 310);
+    /* Case Management — paleta dark (cyberpunk legible sobre fondo oscuro). */
+    --cm-bg: #0a0a0a;
+    --cm-card: #111111;
+    --cm-border: #1e3a47;
+    --cm-text: #f5f5f5;
+    --cm-text-dim: #94a3b8;
+    --cm-red: #ef4444;
+    --cm-orange: #f59e0b;
+    --cm-cyan: #22d3ee;
+    --cm-green: #22c55e;
+    --cm-blue: #3b82f6;
+    --cm-purple: #a78bfa;
+    --cm-info: #22d3ee;
+    --cm-neutral: #a78bfa;
+
+    /* Paleta semántica extendida — dark theme.
+     * Para fondos oscuros usamos sólidos algo más claros (400-500 range) y
+     * fondos suaves se reemplazan por mismo color a baja opacidad (color-mix
+     * con transparent). Bordes 3-niveles también ajustados a slate oscuro. */
+    --accent-hover:    #60a5fa;            /* blue-400 */
+    --accent-bg:       color-mix(in srgb, #3b82f6 18%, transparent);
+
+    --success:         #22c55e;
+    --success-hover:   #4ade80;            /* green-400 */
+    --success-bg:      color-mix(in srgb, #22c55e 18%, transparent);
+
+    --warning:         #f97316;            /* orange-500 */
+    --warning-hover:   #fb923c;            /* orange-400 */
+    --warning-bg:      color-mix(in srgb, #f97316 18%, transparent);
+
+    --analysis:        #f59e0b;            /* amber-500 */
+    --analysis-hover:  #fbbf24;            /* amber-400 */
+    --analysis-bg:     color-mix(in srgb, #f59e0b 18%, transparent);
+
+    --critical:        #ef4444;
+    --critical-hover:  #f87171;            /* red-400 */
+    --critical-bg:     color-mix(in srgb, #ef4444 18%, transparent);
+
+    --info:            #22d3ee;
+    --info-hover:      #67e8f9;            /* cyan-300 */
+    --info-bg:         color-mix(in srgb, #22d3ee 18%, transparent);
+
+    --neutral:         #a78bfa;
+    --neutral-hover:   #c4b5fd;            /* violet-300 */
+    --neutral-bg:      color-mix(in srgb, #a78bfa 18%, transparent);
+
+    --border-subtle:   #1a1a1a;
+    --border-strong:   #334155;            /* slate-700 */
+    --text-disabled:   #475569;            /* slate-600 */
+    --bg-disabled:     #1a1a1a;
+    --row-hover:       color-mix(in srgb, #f5f5f5 6%, transparent);
+    --selection:       color-mix(in srgb, #3b82f6 32%, transparent);
+    --focus-ring:      color-mix(in srgb, #3b82f6 50%, transparent);
+  }
+
+  /* ── Nexus Dark — LegacyHunt brand theme ────────────────────────────────── */
+  /*
+   * Paleta: background #0A1428 · cards #0F1F3A · primary #7CFF4D (verde lima)
+   * secondary #14E9C8 (teal) · danger #FF4D6E · warning #FFB74D
+   * text #FFFFFF/#A3B8D9 · borders #1E2F52
+   */
+  .nexus-dark {
+    color-scheme: dark;
+    /* Borders / inputs / ring */
+    --color-border:            oklch(0.25 0.065 258);
+    --color-input:             oklch(0.25 0.065 258);
+    --color-ring:              oklch(0.87 0.26 135);
+    /* Backgrounds */
+    --color-background:        oklch(0.115 0.048 256);
+    --color-foreground:        oklch(0.98 0.005 260);
+    /* Cards / surfaces */
+    --color-card:              oklch(0.165 0.055 256);
+    --color-card-foreground:   oklch(0.98 0.005 260);
+    /* Muted / subdued */
+    --color-muted:             oklch(0.195 0.055 256);
+    --color-muted-foreground:  oklch(0.75 0.048 248);
+    /* Accent (hover states) */
+    --color-accent:            oklch(0.22 0.07 256);
+    --color-accent-foreground: oklch(0.98 0.005 260);
+    /* Primary — verde lima #7CFF4D */
+    --color-primary:           oklch(0.87 0.26 135);
+    --color-primary-foreground: oklch(0.10 0.045 256);
+    /* Destructive — #FF4D6E */
+    --color-destructive:       oklch(0.62 0.22 14);
+    --color-destructive-foreground: oklch(0.98 0.005 260);
+    /* Sidebar */
+    --color-sidebar:           oklch(0.09 0.042 256);
+    --color-sidebar-border:    oklch(0.25 0.065 258);
+    /* Charts: lima · teal · orange · violet */
+    --color-chart-1:           oklch(0.87 0.26 135);
+    --color-chart-2:           oklch(0.82 0.16 186);
+    --color-chart-3:           oklch(0.80 0.17 65);
+    --color-chart-4:           oklch(0.65 0.22 295);
+    /* Semantic extras exposed as CSS vars for direct use */
+    --nexus-secondary:         oklch(0.82 0.16 186);
+    --nexus-warning:           oklch(0.80 0.17 65);
+    --nexus-glow-primary:      oklch(0.87 0.26 135 / 0.35);
+    --nexus-glow-secondary:    oklch(0.82 0.16 186 / 0.25);
+    /* Case Management — paleta Nexus Dark (lima + teal). */
+    --cm-bg: oklch(0.115 0.048 256);
+    --cm-card: oklch(0.165 0.055 256);
+    --cm-border: oklch(0.28 0.07 258);
+    --cm-text: oklch(0.98 0.005 260);
+    --cm-text-dim: oklch(0.75 0.048 248);
+    --cm-red: #FF4D6E;
+    --cm-orange: #FFB74D;
+    --cm-cyan: #14E9C8;
+    --cm-green: #7CFF4D;
+    --cm-blue: #6FA8FF;
+    --cm-purple: #BFA3FF;
+    --cm-info: #14E9C8;
+    --cm-neutral: #BFA3FF;
+
+    /* Paleta semántica extendida — Nexus Dark */
+    --accent-hover:    #93c5fd;
+    --accent-bg:       color-mix(in srgb, #6FA8FF 18%, transparent);
+    --success:         #7CFF4D;
+    --success-hover:   #BEF264;
+    --success-bg:      color-mix(in srgb, #7CFF4D 14%, transparent);
+    --warning:         #FFB74D;
+    --warning-hover:   #FCD34D;
+    --warning-bg:      color-mix(in srgb, #FFB74D 18%, transparent);
+    --analysis:        #FFB74D;
+    --analysis-hover:  #FCD34D;
+    --analysis-bg:     color-mix(in srgb, #FFB74D 18%, transparent);
+    --critical:        #FF4D6E;
+    --critical-hover:  #FB7185;
+    --critical-bg:     color-mix(in srgb, #FF4D6E 14%, transparent);
+    --info:            #14E9C8;
+    --info-hover:      #5EEAD4;
+    --info-bg:         color-mix(in srgb, #14E9C8 14%, transparent);
+    --neutral:         #BFA3FF;
+    --neutral-hover:   #DDD6FE;
+    --neutral-bg:      color-mix(in srgb, #BFA3FF 14%, transparent);
+    --border-subtle:   oklch(0.20 0.058 258);
+    --border-strong:   oklch(0.35 0.075 258);
+    --text-disabled:   oklch(0.45 0.04 258);
+    --bg-disabled:     oklch(0.15 0.05 256);
+    --row-hover:       color-mix(in srgb, #ffffff 5%, transparent);
+    --selection:       color-mix(in srgb, #7CFF4D 28%, transparent);
+    --focus-ring:      color-mix(in srgb, #7CFF4D 45%, transparent);
+  }
+
+  /* ── Cyber Tactical — dark cyberpunk SOC dashboard ─────────────────────── */
+  /*
+   * Paleta:
+   *   bg #0a0a0a · cards #111111 (con tint cyan #0e1419)
+   *   primary #22d3ee (cyan neón) · accent #0891b2 (cyan profundo)
+   *   destructive #ef4444 (rojo) · warning #f59e0b
+   *   text #f5f5f5 / #94a3b8 · borders sutiles cyan #1e3a47
+   * Tipografía: Inter (UI) + JetBrains Mono (code/tabular).
+   * Body: grid sutil + glow radial bottom-right para sensación tactical.
+   */
+  .cyber-tactical {
+    color-scheme: dark;
+    /* Borders / inputs / ring — cyan profundo translúcido */
+    --color-border:            oklch(0.32 0.05 210);
+    --color-input:             oklch(0.28 0.04 210);
+    --color-ring:              oklch(0.82 0.16 200);
+    /* Backgrounds — negro profundo con leve tint cyan */
+    --color-background:        oklch(0.10 0.005 220);
+    --color-foreground:        oklch(0.96 0.01 220);
+    /* Cards — un step más claro que el fondo */
+    --color-card:              oklch(0.135 0.012 220);
+    --color-card-foreground:   oklch(0.96 0.01 220);
+    /* Muted — surface neutral */
+    --color-muted:             oklch(0.18 0.014 220);
+    --color-muted-foreground:  oklch(0.72 0.022 215);
+    /* Accent — hover/focus cyan oscuro */
+    --color-accent:            oklch(0.24 0.05 210);
+    --color-accent-foreground: oklch(0.96 0.01 220);
+    /* Primary — cyan #22d3ee */
+    --color-primary:           oklch(0.82 0.16 200);
+    --color-primary-foreground: oklch(0.08 0.012 220);
+    /* Destructive — rojo #ef4444 */
+    --color-destructive:       oklch(0.65 0.21 25);
+    --color-destructive-foreground: oklch(0.98 0.005 220);
+    /* Sidebar — más oscuro que main */
+    --color-sidebar:           oklch(0.07 0.008 220);
+    --color-sidebar-border:    oklch(0.28 0.05 210);
+    /* Charts: cyan · azul eléctrico · ámbar tactical · magenta */
+    --color-chart-1:           oklch(0.82 0.16 200);
+    --color-chart-2:           oklch(0.70 0.20 250);
+    --color-chart-3:           oklch(0.80 0.17 70);
+    --color-chart-4:           oklch(0.70 0.24 330);
+    /* Glow tokens reutilizables */
+    --cyber-glow-cyan:         oklch(0.82 0.16 200 / 0.45);
+    --cyber-glow-cyan-soft:    oklch(0.82 0.16 200 / 0.18);
+    --cyber-grid-line:         oklch(0.82 0.16 200 / 0.06);
+    /* Fuentes — override del sans default por Inter */
+    --font-sans:               "Inter", ui-sans-serif, system-ui, sans-serif;
+    --font-mono:               "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    /* Case Management — paleta Cyber Tactical (la original). */
+    --cm-bg: #0a0a0a;
+    --cm-card: #111111;
+    --cm-border: #1e3a47;
+    --cm-text: #f5f5f5;
+    --cm-text-dim: #94a3b8;
+    --cm-red: #ef4444;
+    --cm-orange: #f59e0b;
+    --cm-cyan: #22d3ee;
+    --cm-green: #22c55e;
+    --cm-blue: #3b82f6;
+    --cm-purple: #a78bfa;
+    --cm-info: #22d3ee;
+    --cm-neutral: #a78bfa;
+
+    /* Paleta semántica extendida — Cyber Tactical */
+    --accent-hover:    #67e8f9;
+    --accent-bg:       color-mix(in srgb, #22d3ee 18%, transparent);
+    --success:         #22c55e;
+    --success-hover:   #4ade80;
+    --success-bg:      color-mix(in srgb, #22c55e 18%, transparent);
+    --warning:         #f97316;
+    --warning-hover:   #fb923c;
+    --warning-bg:      color-mix(in srgb, #f97316 18%, transparent);
+    --analysis:        #f59e0b;
+    --analysis-hover:  #fbbf24;
+    --analysis-bg:     color-mix(in srgb, #f59e0b 18%, transparent);
+    --critical:        #ef4444;
+    --critical-hover:  #f87171;
+    --critical-bg:     color-mix(in srgb, #ef4444 18%, transparent);
+    --info:            #22d3ee;
+    --info-hover:      #67e8f9;
+    --info-bg:         color-mix(in srgb, #22d3ee 18%, transparent);
+    --neutral:         #a78bfa;
+    --neutral-hover:   #c4b5fd;
+    --neutral-bg:      color-mix(in srgb, #a78bfa 18%, transparent);
+    --border-subtle:   oklch(0.16 0.014 220);
+    --border-strong:   oklch(0.40 0.07 210);
+    --text-disabled:   oklch(0.45 0.025 215);
+    --bg-disabled:     oklch(0.14 0.012 220);
+    --row-hover:       color-mix(in srgb, #22d3ee 6%, transparent);
+    --selection:       color-mix(in srgb, #22d3ee 32%, transparent);
+    --focus-ring:      var(--cyber-glow-cyan);
+  }
+
+  /* Body cyberpunk: grid tactical sutil + glow radial inferior derecho.
+   * El grid es 32px con líneas de 1px en cyan al 6%. El glow añade
+   * profundidad sin saturar el contenido. */
+  .cyber-tactical body {
+    background-image:
+      linear-gradient(to right,  var(--cyber-grid-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--cyber-grid-line) 1px, transparent 1px),
+      radial-gradient(ellipse at 88% 100%, var(--cyber-glow-cyan-soft) 0%, transparent 55%),
+      radial-gradient(ellipse at 10% -10%, oklch(0.70 0.20 250 / 0.10) 0%, transparent 45%);
+    background-size: 32px 32px, 32px 32px, 100% 100%, 100% 100%;
+    background-attachment: fixed;
+  }
+
+  /* Cards y paneles del tema cyber tactical: borde sutil cyan + glow muy
+   * tenue para acentuar la jerarquía visual sin perder legibilidad. */
+  .cyber-tactical [data-slot="card"],
+  .cyber-tactical .card-cyber-glow {
+    border-color: oklch(0.32 0.08 200 / 0.55);
+    box-shadow:
+      0 0 0 1px oklch(0.82 0.16 200 / 0.08) inset,
+      0 4px 24px -8px oklch(0.82 0.16 200 / 0.10);
+  }
+
+  /* Sidebar: borde derecho cyan saturado para marcar el separador como
+   * elemento tactical. */
+  .cyber-tactical aside {
+    border-right-color: oklch(0.45 0.10 200 / 0.30);
+  }
+
+  /* Botones primary del tema cyber tactical: glow continuo + sharper edges. */
+  .cyber-tactical .btn-cyber-primary,
+  .cyber-tactical [data-cyber-glow] {
+    box-shadow:
+      0 0 0 1px oklch(0.82 0.16 200 / 0.45),
+      0 0 24px -6px var(--cyber-glow-cyan);
+  }
+
+  /* Badges de severidad: glow sutil para CRITICAL/HIGH cuando estamos en
+   * cyber-tactical (sin afectar otros temas). */
+  .cyber-tactical [data-severity="critical"] {
+    box-shadow: 0 0 12px -2px oklch(0.65 0.22 25 / 0.55);
+  }
+  .cyber-tactical [data-severity="high"] {
+    box-shadow: 0 0 10px -2px oklch(0.75 0.18 60 / 0.45);
+  }
+
+  /* Inputs: focus ring en cyan vibrante */
+  .cyber-tactical input:focus-visible,
+  .cyber-tactical textarea:focus-visible,
+  .cyber-tactical select:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px oklch(0.82 0.16 200 / 0.55), 0 0 12px -4px var(--cyber-glow-cyan);
+  }
+
+  /* Tablas: header en cyan tactical + filas con underline más sutil. */
+  .cyber-tactical thead th {
+    color: oklch(0.85 0.12 200);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+  .cyber-tactical tbody tr:nth-child(even) {
+    background-color: oklch(0.16 0.018 220 / 0.6);
+  }
+  .cyber-tactical tbody tr:hover {
+    background-color: oklch(0.82 0.16 200 / 0.04);
+  }
+
+  /* Selección texto en cyan translúcido */
+  .cyber-tactical ::selection {
+    background: oklch(0.82 0.16 200 / 0.32);
+    color: oklch(0.98 0.005 220);
+  }
+
+  /* Datos numéricos / códigos: fuerza mono para todo lo marcado tabular */
+  .cyber-tactical .tabular-nums,
+  .cyber-tactical code,
+  .cyber-tactical kbd {
+    font-family: var(--font-mono);
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    background-image:
+      radial-gradient(circle at top left, color-mix(in oklab, white 85%, oklch(0.9 0.05 220)) 0%, transparent 26%),
+      linear-gradient(to bottom, color-mix(in oklab, white 96%, oklch(0.94 0.02 230)) 0%, transparent 18%);
+    background-attachment: fixed;
+  }
+  .dark body {
+    background-image: none;
+  }
+  /* Nexus Dark body — subtle brand glow: lima top-left, teal bottom-right */
+  .nexus-dark body {
+    background-image:
+      radial-gradient(ellipse at 18% 0%, oklch(0.87 0.26 135 / 0.07) 0%, transparent 42%),
+      radial-gradient(ellipse at 82% 100%, oklch(0.82 0.16 186 / 0.06) 0%, transparent 42%);
+    background-attachment: fixed;
+  }
+  /* Nexus Dark — primary interactive elements get a lime glow */
+  .nexus-dark [data-nexus-glow],
+  .nexus-dark .nexus-glow {
+    box-shadow: 0 0 18px -4px var(--nexus-glow-primary);
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--color-primary) 22%, white);
+    color: var(--color-foreground);
+  }
+  .nexus-dark ::selection {
+    background: oklch(0.87 0.26 135 / 0.28);
+    color: oklch(0.98 0.005 260);
+  }
+  :focus-visible {
+    outline-color: var(--color-ring);
+  }
+  thead th {
+    color: color-mix(in oklab, var(--color-foreground) 88%, var(--color-primary));
+  }
+  tbody tr:nth-child(even) {
+    background-color: color-mix(in oklab, var(--color-muted) 55%, transparent);
+  }
+}
+
+@layer utilities {
+  /* Safe-area helpers for iPhone notch / home indicator */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pb-nav-safe {
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+  }
+  /* Hide scrollbar while keeping scrollability */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  /* WCAG 2.2 AA minimum touch target */
+  .touch-target {
+    min-height: 48px;
+    min-width: 48px;
+  }
+}
+
+/* Critical unadopted case row — pulsing left border */
+@keyframes lh-critical-pulse {
+  0%,  100% { opacity: 1; }
+  50%        { opacity: 0.35; }
+}
+
+/* Loading skeleton: gradient barrido linealmente. Usado por SkeletonRow de la
+ * tabla de gestión y por la franja "refrescando" arriba del grid. */
+@keyframes lh-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Reduce / disable Framer Motion animations when user prefers it */
+@media (prefers-reduced-motion: reduce) {
+  [data-framer-motion] *,
+  [style*="transform"] {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+  .lh-critical-pulse-bar {
+    animation: none !important;
+  }
+}

@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LegacyHunt SOC — Gestión de tickets como chatbot flotante (propuesta · no producción)</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          canvas:  '#141a26', surface: '#1c2433', raise: '#232d3f', line: '#2c3850',
+          brand: { 50:'#1e2c47', 100:'#27395b', 400:'#6aa6ff', 500:'#4f8cf5', 600:'#3b7df0' },
+          ink: { 900:'#e8edf6', 700:'#c4cee0', 500:'#8a96ad', 400:'#5d6a84' },
+          crit:'#f26d6d', high:'#fb923c', med:'#f5c451', ok:'#52c98a', info:'#3fb6e6', iav:'#b48cff',
+        },
+        fontFamily: { sans:['Inter','system-ui','sans-serif'], mono:['JetBrains Mono','ui-monospace','monospace'] },
+        boxShadow: { card:'0 1px 3px rgba(0,0,0,.30)', pop:'0 14px 44px rgba(0,0,0,.55)' },
+      }
+    }
+  }
+</script>
+<style>
+  body { font-family: Inter, system-ui, sans-serif; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background:#2c3850; border-radius:10px; }
+  ::-webkit-scrollbar-thumb:hover { background:#3a4a68; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  @keyframes pop  { from{opacity:0; transform:translateY(10px) scale(.98)} to{opacity:1; transform:none} }
+  @keyframes msg  { from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none} }
+  @keyframes blink{ 0%,80%,100%{opacity:.25} 40%{opacity:1} }
+  .panel-in { animation: pop .2s ease-out; }
+  .msg-in   { animation: msg .22s ease-out; }
+  .dot { width:5px; height:5px; border-radius:50%; background:#8a96ad; display:inline-block; animation: blink 1.2s infinite both; }
+  .dot:nth-child(2){ animation-delay:.2s } .dot:nth-child(3){ animation-delay:.4s }
+  input[type=checkbox]{ accent-color:#4f8cf5; }
+</style>
+</head>
+<body class="bg-canvas text-ink-700 antialiased">
+
+<!-- aviso propuesta -->
+<div class="bg-brand-50 border-b border-line text-center text-[12px] py-1.5 text-brand-400">
+  Propuesta de diseño · <b>NO en producción</b> — Gestión de tickets SOC como chatbot flotante. Datos de ejemplo, acciones simuladas.
+</div>
+
+<!-- ════════════ FONDO: escritorio SOC atenuado (solo contexto) ════════════ -->
+<div class="max-w-[1200px] mx-auto px-6 py-10 select-none pointer-events-none opacity-60">
+  <div class="flex items-center gap-3 mb-6">
+    <div class="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center text-white font-bold">LH</div>
+    <div class="text-ink-900 font-semibold text-lg">LegacyHunt SOC · Consola</div>
+    <div class="ml-auto text-ink-500 text-sm">Turno noche · 02:47</div>
+  </div>
+  <div class="grid grid-cols-3 gap-4">
+    <div class="bg-surface border border-line rounded-xl p-4"><div class="text-ink-500 text-xs">Casos abiertos</div><div class="text-ink-900 text-2xl font-bold mt-1">37</div></div>
+    <div class="bg-surface border border-line rounded-xl p-4"><div class="text-ink-500 text-xs">Tickets en cola</div><div class="text-ink-900 text-2xl font-bold mt-1">12</div></div>
+    <div class="bg-surface border border-line rounded-xl p-4"><div class="text-ink-500 text-xs">SLA vencidos</div><div class="text-crit text-2xl font-bold mt-1">3</div></div>
+  </div>
+  <div class="mt-4 bg-surface border border-line rounded-xl p-4 h-64"></div>
+</div>
+
+<!-- ════════════ LAUNCHER FLOTANTE ════════════ -->
+<button id="launcher" onclick="togglePanel(true)"
+  class="fixed bottom-6 right-6 z-40 h-14 w-14 rounded-full bg-brand-600 hover:bg-brand-500 shadow-pop grid place-items-center transition">
+  <svg class="h-6 w-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+  <span class="absolute -top-1 -right-1 h-5 min-w-5 px-1 rounded-full bg-crit text-white text-[11px] font-bold grid place-items-center border-2 border-canvas">3</span>
+</button>
+
+<!-- ════════════ PANEL DEL CHATBOT ════════════ -->
+<section id="panel" class="hidden fixed bottom-6 right-6 z-40 w-[400px] max-w-[calc(100vw-2rem)] h-[640px] max-h-[calc(100vh-3rem)]
+         bg-surface border border-line rounded-2xl shadow-pop flex flex-col overflow-hidden panel-in">
+
+  <!-- header -->
+  <header class="flex items-center gap-2.5 px-4 py-3 border-b border-line bg-raise/60">
+    <div class="relative h-8 w-8 rounded-lg bg-iiv grid place-items-center" style="background:#27204a">
+      <svg class="h-4 w-4 text-iav" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3v4M3 5h4M6 17v4M4 19h4M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5z"/></svg>
+      <span class="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-ok border-2 border-surface"></span>
+    </div>
+    <div class="min-w-0">
+      <div class="text-ink-900 font-semibold text-sm leading-tight">Asistente de Tickets</div>
+      <div id="hdr-sub" class="text-ink-500 text-[11px] leading-tight">Triage de la cola · en línea</div>
+    </div>
+    <div class="ml-auto flex items-center gap-1">
+      <button onclick="goTriage()" title="Volver a la cola" class="h-7 w-7 rounded-md hover:bg-raise grid place-items-center text-ink-500">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg></button>
+      <button onclick="togglePanel(false)" title="Minimizar" class="h-7 w-7 rounded-md hover:bg-raise grid place-items-center text-ink-500">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+    </div>
+  </header>
+
+  <!-- hilo de mensajes -->
+  <div id="thread" class="flex-1 overflow-y-auto px-3 py-3 space-y-3"></div>
+
+  <!-- composer -->
+  <footer class="border-t border-line bg-raise/50 px-3 py-2.5">
+    <div id="quick" class="flex flex-wrap gap-1.5 mb-2"></div>
+    <div class="flex items-end gap-2">
+      <textarea id="input" rows="1" placeholder="Escribí un mensaje o pedí una acción…"
+        class="flex-1 resize-none rounded-lg bg-canvas border border-line px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:ring-0"></textarea>
+      <button onclick="sendUser()" class="h-9 w-9 shrink-0 rounded-lg bg-brand-600 hover:bg-brand-500 grid place-items-center text-white">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg>
+      </button>
+    </div>
+    <div class="text-center text-[10px] text-ink-400 mt-1.5">Las acciones piden confirmación antes de aplicarse — nada se ejecuta solo.</div>
+  </footer>
+</section>
+
+<script>
+// ════════════ Datos de ejemplo ════════════
+const TICKETS = {
+  'TK-2041': {
+    ref:'TK-2041', org:'Renistsa S.A.', contact:'rinsfran@legacy-roots.net',
+    subject:'No puedo acceder al portal de reportes', priority:'high', sla:'breach', waiting:'SOC',
+    sentiment:{emoji:'😠', label:'Frustrado'}, unread:2,
+    msgs:[
+      {who:'client', name:'rinsfran@legacy-roots.net', t:'09:12', body:'Hola, llevo dos horas sin poder entrar al portal y necesito el reporte de hoy. Esto es urgente.'},
+      {who:'client', name:'rinsfran@legacy-roots.net', t:'10:48', body:'¿Alguien me puede responder? Ya pasó mucho tiempo.'},
+    ],
+    ia:{ type:'Acceso / Cuenta', priority:'Alta', sentiment:'😠 Frustrado', confidence:88, source:'modelo',
+         summary:'Cliente bloqueado del portal de reportes; tono de urgencia creciente. Posible expiración de sesión SSO.',
+         tags:['acceso','portal-reportes','sso'] },
+  },
+  'TK-2039': {
+    ref:'TK-2039', org:'Comercial Yacaré', contact:'soporte@yacare.example',
+    subject:'Consulta sobre alerta de Fortigate', priority:'med', sla:'warn', waiting:'SOC',
+    sentiment:{emoji:'😐', label:'Neutral'}, unread:1,
+    msgs:[ {who:'client', name:'soporte@yacare.example', t:'08:30', body:'Nos llegó una alerta de tráfico saliente raro, ¿la pueden revisar?'} ],
+    ia:{ type:'Consulta técnica', priority:'Media', sentiment:'😐 Neutral', confidence:74, source:'heurística',
+         summary:'Solicitud de revisión de alerta de tráfico saliente en Fortigate. Sin indicio de incidente confirmado.',
+         tags:['fortigate','consulta','trafico-saliente'] },
+  },
+  'TK-2034': {
+    ref:'TK-2034', org:'Distribuidora Paraná', contact:'it@parana.example',
+    subject:'Solicitud de cierre — falso positivo', priority:'low', sla:'ok', waiting:'CLIENT',
+    sentiment:{emoji:'🙂', label:'Conforme'}, unread:0,
+    msgs:[ {who:'client', name:'it@parana.example', t:'Ayer', body:'Confirmamos que era una prueba interna, pueden cerrar.'},
+           {who:'soc', name:'M. Duarte', t:'Ayer', body:'Perfecto, te envío el enlace de confirmación de cierre.'} ],
+    ia:{ type:'Cierre / Falso positivo', priority:'Baja', sentiment:'🙂 Conforme', confidence:91, source:'modelo',
+         summary:'Cliente confirma actividad benigna (prueba interna). Apto para cierre vía sign-off del cliente.',
+         tags:['falso-positivo','cierre','sign-off'] },
+  },
+};
+const SLA_TXT = { breach:['SLA vencido','text-crit'], warn:['SLA por vencer','text-high'], ok:['En tiempo','text-ok'] };
+
+// ════════════ Infra de chat ════════════
+const thread = document.getElementById('thread');
+let current = null; // ticket abierto
+
+function togglePanel(open){
+  document.getElementById('panel').classList.toggle('hidden', !open);
+  document.getElementById('launcher').classList.toggle('hidden', open);
+  if (open && thread.childElementCount === 0) goTriage();
+}
+function scroll(){ thread.scrollTop = thread.scrollHeight; }
+
+function bubble(side, html, opts={}){
+  const wrap = document.createElement('div');
+  wrap.className = 'msg-in flex ' + (side==='user' ? 'justify-end' : 'justify-start');
+  const tone = side==='user'
+    ? 'bg-brand-600 text-white'
+    : (opts.tone || 'bg-raise text-ink-700 border border-line');
+  wrap.innerHTML = `<div class="max-w-[88%] rounded-2xl ${side==='user'?'rounded-br-sm':'rounded-bl-sm'} ${tone} px-3 py-2 text-[13px] leading-snug">${html}</div>`;
+  thread.appendChild(wrap); scroll(); return wrap;
+}
+function botTyping(then){
+  const w = bubble('bot', `<span class="dot"></span><span class="dot ml-1"></span><span class="dot ml-1"></span>`);
+  setTimeout(()=>{ w.remove(); then(); }, 650);
+}
+function setQuick(buttons){
+  const q = document.getElementById('quick');
+  q.innerHTML = '';
+  buttons.forEach(b=>{
+    const el = document.createElement('button');
+    el.className = 'rounded-full border border-line bg-canvas hover:bg-raise text-ink-700 text-[12px] px-2.5 py-1';
+    el.innerHTML = b.label; el.onclick = b.fn; q.appendChild(el);
+  });
+}
+
+// ════════════ Vista TRIAGE (cola como conversación) ════════════
+function goTriage(){
+  current = null;
+  document.getElementById('hdr-sub').textContent = 'Triage de la cola · en línea';
+  thread.innerHTML = '';
+  bubble('bot', `Buenas 👋 Tenés <b>3 tickets que necesitan atención</b> ahora. Te los ordeno por urgencia:`);
+  const list = Object.values(TICKETS).map(t=>{
+    const [stxt, scls] = SLA_TXT[t.sla];
+    const pill = t.waiting==='SOC'
+      ? `<span class="text-[10px] rounded-full px-1.5 py-0.5" style="background:#3a2a16;color:#fb923c">→ acción SOC</span>`
+      : `<span class="text-[10px] rounded-full px-1.5 py-0.5" style="background:#1d2c20;color:#52c98a">esperando cliente</span>`;
+    return `<button onclick="openTicket('${t.ref}')" class="block w-full text-left rounded-xl border border-line bg-canvas hover:border-brand-500 transition px-3 py-2 mb-1.5">
+      <div class="flex items-center gap-2">
+        <span class="font-mono text-[11px] text-ink-500">${t.ref}</span>
+        <span class="${scls} text-[10px] font-semibold">● ${stxt}</span>
+        ${t.unread?`<span class="ml-auto text-[10px] rounded-full bg-info/20 text-info px-1.5 py-0.5">${t.unread} sin leer</span>`:''}
+      </div>
+      <div class="text-ink-900 text-[13px] font-medium mt-0.5 truncate">${t.subject}</div>
+      <div class="flex items-center gap-2 mt-1 text-ink-500 text-[11px]">
+        <span>${t.sentiment.emoji} ${t.org}</span> ${pill}
+      </div>
+    </button>`;
+  }).join('');
+  bubble('bot', list, {tone:'bg-transparent'});
+  setQuick([
+    {label:'⚠ Ver vencidos', fn:()=>userSays('Mostrame solo los SLA vencidos')},
+    {label:'✉ Sin leer', fn:()=>userSays('¿Cuáles tienen mensajes sin leer?')},
+    {label:'😠 Clientes molestos', fn:()=>userSays('¿Algún cliente molesto?')},
+  ]);
+}
+
+// ════════════ Vista TICKET (hilo + acciones) ════════════
+function openTicket(ref){
+  const t = TICKETS[ref]; current = t;
+  document.getElementById('hdr-sub').textContent = `${t.ref} · ${t.org}`;
+  thread.innerHTML = '';
+  bubble('bot', `Abrí <b>${t.ref}</b> — “${t.subject}”.<br><span class="text-ink-500 text-[12px]">Cliente: ${t.contact} · prioridad ${t.priority.toUpperCase()} · <span class="${SLA_TXT[t.sla][1]}">${SLA_TXT[t.sla][0]}</span></span>`);
+  t.msgs.forEach(m=>{
+    const mine = m.who==='soc';
+    bubble(mine?'user':'bot',
+      `<div class="text-[10px] font-semibold ${mine?'text-white/80':'text-ink-500'} mb-0.5">${mine?'🛡️ '+m.name+' · Analista':'👤 '+m.name+' · Cliente'}</div>${m.body}<div class="text-[10px] ${mine?'text-white/60':'text-ink-400'} text-right mt-0.5">${m.t}</div>`);
+  });
+  bubble('bot', `¿Qué hacemos con este ticket? Puedo proponer acciones — todas requieren tu visto bueno.`);
+  setQuick([
+    {label:'✨ Clasificar con IA', fn:runClassify},
+    {label:'🙋 Asignármelo', fn:()=>simpleAction('Me asigné el ticket','Listo, <b>'+t.ref+'</b> queda asignado a vos.')},
+    {label:'💬 Responder', fn:()=>simpleAction('Responder al cliente','Te abro el editor de respuesta con la plantilla de “acceso bloqueado”. (simulado)')},
+    {label:'✓ Cerrar', fn:()=>simpleAction('Cerrar ticket','Para cerrar genero el enlace de <b>confirmación del cliente</b> (sign-off). El SOC no cierra directo.')},
+  ]);
+}
+
+// ════════════ Acción estrella: CLASIFICACIÓN POR IA como CHECK ════════════
+function runClassify(){
+  if(!current) return;
+  userSays('Clasificá este ticket con IA');
+  botTyping(()=>{
+    document.getElementById('hdr-sub').textContent = `${current.ref} · analizando con IA…`;
+    const ia = current.ia;
+    const fields = [
+      {k:'type',     icon:'🏷️', label:'Tipo',        val:ia.type},
+      {k:'priority', icon:'🚦', label:'Prioridad',   val:ia.priority},
+      {k:'sentiment',icon:'❤️', label:'Sentimiento', val:ia.sentiment},
+      {k:'tags',     icon:'#',  label:'Etiquetas',   val:ia.tags.join(', ')},
+    ];
+    const rows = fields.map(f=>`
+      <label class="flex items-center gap-2 rounded-lg bg-canvas border border-line px-2.5 py-1.5 cursor-pointer">
+        <input type="checkbox" class="ia-chk h-4 w-4 rounded" data-k="${f.k}" checked>
+        <span class="text-[12px] w-20 text-ink-500">${f.icon} ${f.label}</span>
+        <span class="text-[13px] text-ink-900 font-medium flex-1">${f.val}</span>
+      </label>`).join('');
+    const confColor = ia.confidence>=85?'text-ok':ia.confidence>=70?'text-med':'text-high';
+    const card = `
+      <div class="rounded-xl border border-iav/40 p-2.5" style="background:#1b1630">
+        <div class="flex items-center gap-1.5 text-iav font-semibold text-[13px]">
+          ✨ Clasificación por IA
+          <span class="ml-auto text-[11px] ${confColor}">confianza ${ia.confidence}%</span>
+        </div>
+        <p class="text-ink-500 text-[12px] mt-1 italic">“${ia.summary}”</p>
+        <div class="text-ink-400 text-[10px] mt-0.5">Fuente: ${ia.source} · revisá y destildá lo que no aplique</div>
+        <div class="space-y-1 mt-2">${rows}</div>
+        <div class="flex gap-2 mt-2.5">
+          <button onclick="applyClassify(this)" class="flex-1 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-[13px] font-medium py-1.5 grid place-items-center gap-1" style="display:flex">
+            ✓ Aplicar lo tildado
+          </button>
+          <button onclick="runClassify()" class="rounded-lg border border-line hover:bg-raise text-ink-700 text-[13px] px-3">Re-analizar</button>
+        </div>
+      </div>`;
+    bubble('bot', card, {tone:'bg-transparent p-0 border-0'});
+    document.getElementById('hdr-sub').textContent = `${current.ref} · ${current.org}`;
+  });
+}
+function applyClassify(btn){
+  const card = btn.closest('.msg-in');
+  const checked = [...card.querySelectorAll('.ia-chk:checked')].map(c=>c.dataset.k);
+  if(checked.length===0){ btn.textContent='Tildá al menos un campo'; setTimeout(()=>btn.innerHTML='✓ Aplicar lo tildado',1200); return; }
+  card.querySelectorAll('.ia-chk').forEach(c=>c.disabled=true);
+  btn.parentElement.innerHTML = `<div class="flex-1 rounded-lg bg-ok/15 text-ok text-[13px] font-medium py-1.5 text-center">✓ Aplicado a ${current.ref} (${checked.length} campo${checked.length>1?'s':''})</div>`;
+  setTimeout(()=>bubble('bot', `Listo ✅ Apliqué la clasificación a <b>${current.ref}</b>. Quedó registrado en la auditoría del ticket. ¿Seguimos con otra acción o volvemos a la cola?`), 250);
+}
+
+// ════════════ acciones simples + entrada de usuario ════════════
+function simpleAction(userTxt, botTxt){
+  userSays(userTxt);
+  botTyping(()=>bubble('bot', botTxt));
+}
+function userSays(txt){ bubble('user', txt); }
+function sendUser(){
+  const i = document.getElementById('input'); const v = i.value.trim();
+  if(!v) return; i.value=''; userSays(v);
+  botTyping(()=>{
+    if(/vencid/i.test(v)) return bubble('bot','El más crítico es <b>TK-2041</b> (vencido, cliente frustrado). ¿Lo abro?').firstChild;
+    if(/sin leer|no le[íi]/i.test(v)) return bubble('bot','Hay 2 con mensajes sin leer: <b>TK-2041</b> (2) y <b>TK-2039</b> (1).');
+    if(/molest|enojad|frustrad/i.test(v)) return bubble('bot','😠 <b>TK-2041</b> — Renistsa, tono frustrado y SLA vencido. Te recomiendo atenderlo primero.');
+    bubble('bot','Puedo ayudarte a clasificar, asignar, responder o cerrar un ticket. Tocá uno de la cola o usá los botones de acción.');
+  });
+}
+document.getElementById('input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendUser(); }});
+
+// abrir el panel de entrada para que la demo se vea sola
+window.addEventListener('load', ()=> setTimeout(()=>togglePanel(true), 350));
+</script>
+</body>
+</html>

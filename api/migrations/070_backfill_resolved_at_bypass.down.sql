@@ -1,0 +1,12 @@
+-- Down de 070: NO-OP destructivo evitado.
+--
+-- Revertir poblaría a NULL un campo cuyo valor calculado es heurístico pero
+-- semánticamente correcto (auto_closed_at o STATUS_CHANGE timestamp del
+-- timeline). Reescribir NULL borraría la única reconstrucción posible sin
+-- garantía de poder regenerarla (el JSONB timeline puede haber crecido tras
+-- la migración y el "last STATUS_CHANGE" sería distinto).
+--
+-- Si realmente necesitás revertir, ejecutar manualmente:
+--   UPDATE incident_cases_pg SET resolved_at = NULL
+--    WHERE status IN ('CERRADO','FALSO_POSITIVO');
+-- Pero asumí las consecuencias en KPIs MTTR.

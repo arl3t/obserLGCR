@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>Centro de Ayuda</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}
+    .kb-prose h1{font-size:1.5rem;font-weight:700;margin:1rem 0 .5rem}
+    .kb-prose h2{font-size:1.25rem;font-weight:700;margin:1rem 0 .4rem}
+    .kb-prose h3{font-size:1.05rem;font-weight:600;margin:.8rem 0 .3rem}
+    .kb-prose p{margin:.5rem 0;line-height:1.6}
+    .kb-prose ul,.kb-prose ol{margin:.5rem 0 .5rem 1.25rem;list-style:disc}
+    .kb-prose ol{list-style:decimal}
+    .kb-prose li{margin:.2rem 0}
+    .kb-prose code{background:#f1f5f9;border-radius:4px;padding:1px 5px;font-size:.85em}
+    .kb-prose a{color:#0891b2;text-decoration:underline}
+    .kb-prose table{border-collapse:collapse;margin:.6rem 0;width:100%}
+    .kb-prose th,.kb-prose td{border:1px solid #e2e8f0;padding:6px 10px;text-align:left;font-size:.9em}
+    .kb-prose hr{margin:1rem 0;border-color:#e2e8f0}
+
+    /* ── Rediseño: chat moderno + bloque de decisión (analista SOC) ── */
+    .chat-row{display:flex;gap:.5rem;align-items:flex-end}
+    .chat-bubble{max-width:80%;border-radius:1rem;padding:.6rem .85rem;font-size:.875rem;line-height:1.45;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+    .avatar{flex:0 0 auto;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:600}
+    .typing-dots{display:inline-flex;gap:3px;align-items:center}
+    .typing-dots i{width:6px;height:6px;border-radius:9999px;background:#94a3b8;display:inline-block;animation:td 1.2s infinite ease-in-out}
+    .typing-dots i:nth-child(2){animation-delay:.18s}
+    .typing-dots i:nth-child(3){animation-delay:.36s}
+    @keyframes td{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-3px);opacity:1}}
+    .act-btn{transition:transform .12s ease,background-color .15s ease,box-shadow .15s ease,border-color .15s ease}
+    .act-btn:hover{transform:translateY(-1px)}
+    .act-btn:active{transform:translateY(0) scale(.985)}
+    .chk-item.done .chk-label{text-decoration:line-through;color:#94a3b8}
+    .composer{transition:box-shadow .15s ease,border-color .15s ease}
+    .composer:focus-within{border-color:#0891b2;box-shadow:0 0 0 3px rgba(8,145,178,.12)}
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+<div id="app"></div>
+
+<script>
+// ── Centro de Ayuda (portal de autoservicio). App estática aislada; habla solo
+//    con /api/portal/*. Base de Conocimiento + apertura/seguimiento de tickets.
+//    Script PLANO a propósito (sin template-literals anidados profundos).
+const API = "/api/portal";
+const app = document.getElementById("app");
+let SESSION = localStorage.getItem("portal_session") || null;
+let ME = null;
+
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = (iso) => iso ? new Date(iso).toLocaleString("es-PY") : "—";
+const STATUS_ES = { ABIERTO:"Abierto", EN_ATENCION:"En atención", ESPERANDO_CLIENTE:"Esperando tu respuesta", RESUELTO:"Resuelto", REABIERTO:"Reabierto", CERRADO:"Cerrado" };
+const STATUS_CLS = { ABIERTO:"bg-sky-100 text-sky-700", EN_ATENCION:"bg-indigo-100 text-indigo-700", ESPERANDO_CLIENTE:"bg-amber-100 text-amber-700", RESUELTO:"bg-emerald-100 text-emerald-700", REABIERTO:"bg-orange-100 text-orange-700", CERRADO:"bg-slate-100 text-slate-600" };
+const ACT_ES = { CONTENCION_FIREWALL:"Contención en firewall", AISLAR_HOST:"Aislar host", BLOQUEO_IOC:"Bloquear indicador", RESET_CREDENCIALES:"Resetear credenciales", APLICAR_PARCHE:"Aplicar parche", DESHABILITAR_CUENTA:"Deshabilitar cuenta", DESHABILITAR_SERVICIO:"Deshabilitar servicio", OTRO:"Otro" };
+const ADEC_ES = { PENDIENTE:"Pendiente", EJECUTADA:"Ejecutada", RECHAZADA:"Rechazada", RIESGO_ACEPTADO:"Riesgo aceptado", DIFERIDA:"Diferida", CANCELADA:"Cancelada" };
+const CAT_ICON = { General:"📘", Cuenta:"🔑", Acceso:"🔑", Seguridad:"🛡️", Tickets:"🎫", Facturación:"💳", Red:"🌐" };
+
+// ── (El portal del cliente NO muestra threat-intel/IOCs: es una superficie de
+//    soporte. El análisis técnico vive en el dashboard interno del SOC.) ──
+
+// ── Checklist de verificación (estado local por acción; no hay campo en backend) ──
+const DEFAULT_STEPS = ["Revisar contexto del incidente", "Consultar threat intelligence", "Verificar casos anteriores"];
+function splitSteps(text) {
+  if (!text) return DEFAULT_STEPS.slice();
+  const parts = String(text).split(/\r?\n|;|·|•|(?:^|\s)\d+[.\)]\s+/).map((s) => s.trim()).filter(Boolean);
+  return parts.length ? parts : DEFAULT_STEPS.slice();
+}
+const chkKey = (arId) => "portal_chk_" + arId;
+function chkState(arId) { try { return JSON.parse(localStorage.getItem(chkKey(arId)) || "{}"); } catch { return {}; } }
+function chkToggle(arId, i, on) { const s = chkState(arId); s[i] = on; localStorage.setItem(chkKey(arId), JSON.stringify(s)); }
+function checklistHtml(arId, steps) {
+  const st = chkState(arId);
+  return '<div class="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3" data-chk="' + esc(arId) + '">'
+    + '<div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Checklist de verificación</div>'
+    + '<ul class="mt-2 space-y-1.5">'
+    + steps.map((s, i) => {
+        const done = !!st[i];
+        return '<li class="chk-item ' + (done ? "done" : "") + ' flex items-start gap-2 text-sm">'
+          + '<input type="checkbox" data-i="' + i + '" ' + (done ? "checked" : "") + ' class="mt-0.5 h-4 w-4 cursor-pointer rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" />'
+          + '<span class="chk-label text-slate-700">' + esc(s) + '</span></li>';
+      }).join("")
+    + '</ul></div>';
+}
+
+// ── Indicador discreto "El sistema está analizando…" (burbuja efímera) ──
+function typingBubbleHtml() {
+  return '<div id="typing-row" class="chat-row">'
+    + '<div class="avatar bg-slate-200 text-slate-600">🛡️</div>'
+    + '<div class="chat-bubble border border-slate-200 bg-white text-slate-500">'
+    +   '<span class="inline-flex items-center gap-2 text-xs"><span class="typing-dots"><i></i><i></i><i></i></span> El sistema está analizando…</span>'
+    + '</div></div>';
+}
+
+// ── Burbuja de mensaje asimétrica (avatar + marca de tiempo) ──
+const QUICK_REPLIES = [
+  "Confirmamos la ejecución de la acción recomendada.",
+  "Necesitamos más información para decidir.",
+  "Estamos coordinando internamente, respondemos a la brevedad.",
+  "¿Pueden indicarnos el impacto estimado?",
+];
+// ── Fila de mensaje estilo Slack: avatar + nombre + hora + cuerpo, alineado a la
+//    izquierda. Queda registro de QUIÉN escribió y CUÁNDO en cada mensaje. ──
+function attachmentsHtml(m) {
+  let out = "";
+  if (m.hasReport) out += '<button data-report="' + esc(m.id) + '" class="msg-attach rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-cyan-700 hover:bg-cyan-50">📄 Ver informe</button>';
+  if (m.hasPlaybook) out += '<button data-playbook="' + esc(m.id) + '" class="msg-attach rounded-lg border border-emerald-200 bg-white px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50">📕 Ver playbook</button>';
+  return out ? '<div class="mt-1.5 flex flex-wrap gap-1.5">' + out + '</div>' : "";
+}
+function msgRow(m) {
+  const time = fmt(m.createdAt);
+  if (m.authorType === "SYSTEM") {
+    return '<div class="flex justify-center py-1"><div class="rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-500">' + esc(m.body) + '</div></div>';
+  }
+  const isClient = m.authorType === "CLIENT";
+  const avatar = isClient
+    ? '<div class="avatar bg-cyan-100 text-cyan-700">Tú</div>'
+    : '<div class="avatar bg-slate-700 text-white">🛡️</div>';
+  const name = isClient ? "text-cyan-700" : "text-slate-800";
+  return '<div class="msg-row group flex items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-slate-50">'
+    + avatar
+    + '<div class="min-w-0 flex-1">'
+    +   '<div class="flex items-baseline gap-2">'
+    +     '<span class="text-sm font-semibold ' + name + '">' + esc(m.author) + '</span>'
+    +     '<span class="text-[11px] text-slate-400">' + time + '</span>'
+    +   '</div>'
+    +   '<div class="mt-0.5 whitespace-pre-wrap break-words text-sm text-slate-700">' + esc(m.body) + '</div>'
+    +   attachmentsHtml(m)
+    + '</div>'
+    + '</div>';
+}
+
+async function api(path, opts = {}) {
+  const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+  if (SESSION) headers["Authorization"] = "Bearer " + SESSION;
+  const r = await fetch(API + path, { ...opts, headers });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+  return data;
+}
+async function apiText(path) {
+  const headers = {};
+  if (SESSION) headers["Authorization"] = "Bearer " + SESSION;
+  const r = await fetch(API + path, { headers });
+  if (!r.ok) throw new Error("No se pudo cargar (" + r.status + ")");
+  return r.text();
+}
+function logout() {
+  api("/auth/logout", { method: "POST" }).catch(() => {});
+  SESSION = null; ME = null; localStorage.removeItem("portal_session");
+  viewLogin("Cerraste sesión.");
+}
+
+// Documento (informe / playbook) en iframe SANDBOXED (sin scripts, sin same-origin).
+function openDocModal(html, title) {
+  const ov = document.createElement("div");
+  ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:16px";
+  const box = document.createElement("div");
+  box.style.cssText = "background:#fff;border-radius:14px;width:min(900px,100%);height:min(85vh,100%);display:flex;flex-direction:column;overflow:hidden";
+  const bar = document.createElement("div");
+  bar.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #e2e8f0";
+  bar.innerHTML = '<span class="text-sm font-medium text-slate-700">' + esc(title || "Documento") + '</span>';
+  const close = document.createElement("button");
+  close.textContent = "Cerrar"; close.className = "rounded-lg border px-3 py-1 text-sm hover:bg-slate-50";
+  close.onclick = () => ov.remove();
+  bar.appendChild(close);
+  const ifr = document.createElement("iframe");
+  ifr.setAttribute("sandbox", "");
+  ifr.style.cssText = "flex:1;border:0;width:100%";
+  ifr.srcdoc = html;
+  box.appendChild(bar); box.appendChild(ifr); ov.appendChild(box);
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
+
+// ── Shell con encabezado/navegación (sólo logueado) ───────────────────────────
+function shell(content) {
+  const orgName = esc(ME && ME.org ? ME.org.name : "");
+  const email = esc(ME ? ME.email : "");
+  return ''
+    + '<div class="min-h-screen">'
+    +   '<header class="bg-gradient-to-r from-cyan-700 to-sky-700 text-white">'
+    +     '<div class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">'
+    +       '<button id="nav-home" class="flex items-center gap-2 text-left">'
+    +         '<span class="text-lg">🛟</span>'
+    +         '<span><span class="block text-sm font-semibold leading-tight">Centro de Ayuda</span>'
+    +         '<span class="block text-[11px] text-cyan-100">' + orgName + '</span></span>'
+    +       '</button>'
+    +       '<nav class="flex items-center gap-1 text-sm">'
+    +         '<button id="nav-tickets" class="rounded-lg px-3 py-1.5 hover:bg-white/10">Mis tickets</button>'
+    +         '<button id="nav-integ" class="hidden rounded-lg px-3 py-1.5 hover:bg-white/10 sm:block">Integraciones</button>'
+    +         '<button id="nav-new" class="rounded-lg bg-white/15 px-3 py-1.5 font-medium hover:bg-white/25">+ Abrir ticket</button>'
+    +         '<button id="nav-logout" class="rounded-lg px-3 py-1.5 hover:bg-white/10" title="' + email + '">Salir</button>'
+    +       '</nav>'
+    +     '</div>'
+    +   '</header>'
+    +   '<main class="mx-auto max-w-5xl px-4 py-6">' + content + '</main>'
+    + '</div>';
+}
+function wireShell() {
+  const h = document.getElementById("nav-home"); if (h) h.onclick = viewHome;
+  const t = document.getElementById("nav-tickets"); if (t) t.onclick = viewTickets;
+  const i = document.getElementById("nav-integ"); if (i) i.onclick = viewIntegrations;
+  const n = document.getElementById("nav-new"); if (n) n.onclick = () => viewNewTicket();
+  const l = document.getElementById("nav-logout"); if (l) l.onclick = logout;
+}
+function loading() { app.innerHTML = shell('<div class="py-16 text-center text-slate-400">Cargando…</div>'); wireShell(); }
+
+// ── Login (magic-link) ────────────────────────────────────────────────────────
+function viewLogin(msg) {
+  app.innerHTML = ''
+    + '<div class="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-cyan-50 px-4">'
+    +   '<div class="w-full max-w-md">'
+    +     '<div class="mb-6 text-center">'
+    +       '<div class="text-4xl">🛟</div>'
+    +       '<h1 class="mt-2 text-2xl font-bold text-slate-800">Centro de Ayuda</h1>'
+    +       '<p class="mt-1 text-sm text-slate-500">Resolvé tus dudas y seguí tus tickets de soporte.</p>'
+    +     '</div>'
+    +     '<div class="rounded-2xl border bg-white p-6 shadow-sm">'
+    +       '<label class="block text-sm font-medium">Tu email</label>'
+    +       '<input id="email" type="email" class="mt-1 mb-3 w-full rounded-xl border px-3 py-2.5" placeholder="tu@empresa.com" />'
+    +       '<details class="mb-3"><summary class="cursor-pointer text-xs text-slate-400">¿Tenés más de una organización?</summary>'
+    +         '<input id="org" class="mt-2 w-full rounded-xl border px-3 py-2 text-sm" placeholder="identificador de organización (opcional)" /></details>'
+    +       '<button id="send" class="w-full rounded-xl bg-cyan-600 py-2.5 font-medium text-white hover:bg-cyan-700">Enviarme el enlace de acceso</button>'
+    +       '<div id="msg" class="mt-3 text-sm text-slate-600">' + (msg || "") + '</div>'
+    +     '</div>'
+    +     '<p class="mt-4 text-center text-xs text-slate-400">Te enviamos un enlace seguro por correo (válido 15 minutos). No usamos contraseñas.</p>'
+    +   '</div>'
+    + '</div>';
+  document.getElementById("send").onclick = async () => {
+    const orgSlug = document.getElementById("org").value.trim();
+    const email = document.getElementById("email").value.trim();
+    const msgEl = document.getElementById("msg");
+    const btn = document.getElementById("send");
+    if (!email) { msgEl.textContent = "Ingresá tu email."; return; }
+    msgEl.textContent = ""; btn.disabled = true; const prev = btn.textContent; btn.textContent = "Enviando…";
+    try {
+      const r = await api("/auth/request-link", { method: "POST", body: JSON.stringify({ orgSlug, email }) });
+      msgEl.innerHTML = '<div class="rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-emerald-800">'
+        + '<div class="font-medium">✅ Correo enviado</div>'
+        + '<div class="mt-1 text-xs">Si <b>' + esc(email) + '</b> está registrado, te enviamos un enlace de acceso (válido 15 minutos). Revisá tu bandeja y la carpeta de <b>spam</b>.</div></div>'
+        + (r.devLink ? '<div class="mt-2 text-xs text-slate-400">[dev] <a class="text-cyan-600 underline" href="' + esc(r.devLink) + '">abrir enlace</a></div>' : "");
+    } catch (e) {
+      msgEl.innerHTML = '<div class="rounded-xl border border-red-300 bg-red-50 p-2 text-sm text-red-700">No se pudo enviar: ' + esc(e.message) + '</div>';
+    } finally { btn.disabled = false; btn.textContent = prev; }
+  };
+}
+
+// ── Home: centro de ayuda (búsqueda + categorías + artículos) ─────────────────
+function articleCard(a) {
+  const votes = (a.helpful_yes || 0) + (a.helpful_no || 0);
+  const helpful = votes ? Math.round(100 * (a.helpful_yes || 0) / votes) + "% útil" : "";
+  return '<button data-slug="' + esc(a.slug) + '" class="kb-card block w-full rounded-xl border bg-white p-4 text-left shadow-sm transition hover:border-cyan-300 hover:shadow">'
+    + '<div class="flex items-center gap-2 text-[11px] text-slate-400"><span class="rounded bg-slate-100 px-2 py-0.5">' + esc(a.category) + '</span>' + (helpful ? '<span>· ' + helpful + '</span>' : '') + '</div>'
+    + '<div class="mt-1 font-semibold text-slate-800">' + esc(a.title) + '</div>'
+    + (a.excerpt ? '<div class="mt-1 line-clamp-2 text-sm text-slate-500">' + esc(a.excerpt) + '</div>' : '')
+    + '</button>';
+}
+function statCard(value, label, accent) {
+  return '<div class="rounded-2xl border bg-white p-4 shadow-sm">'
+    + '<div class="text-3xl font-bold ' + (accent || "text-slate-800") + '">' + value + '</div>'
+    + '<div class="mt-1 text-xs text-slate-500">' + label + '</div></div>';
+}
+async function viewHome() {
+  loading();
+  let cats = [], arts = [], tks = [];
+  try {
+    if (!ME) ME = await api("/me");
+    [cats, arts, tks] = await Promise.all([
+      api("/kb/categories").then((r) => r.categories).catch(() => []),
+      api("/kb/articles").then((r) => r.articles).catch(() => []),
+      api("/tickets").then((r) => r.tickets).catch(() => []),
+    ]);
+  } catch { return sessionDead(); }
+  const openCount = tks.filter((t) => t.status !== "CERRADO" && t.status !== "RESUELTO").length;
+  const waitingCount = tks.filter((t) => t.status === "ESPERANDO_CLIENTE").length;
+  const stats = '<div class="mt-6 grid grid-cols-3 gap-3">'
+    + statCard(openCount, "Tickets activos", "text-cyan-600")
+    + statCard(waitingCount, "Esperan tu respuesta", waitingCount ? "text-amber-500" : "text-slate-800")
+    + statCard(arts.length, "Artículos de ayuda", "text-slate-800")
+    + '</div>';
+
+  const hero = ''
+    + '<section class="rounded-2xl bg-gradient-to-br from-cyan-600 to-sky-700 p-8 text-center text-white shadow-sm">'
+    +   '<h1 class="text-2xl font-bold">¿En qué podemos ayudarte?</h1>'
+    +   '<p class="mt-1 text-sm text-cyan-100">Buscá en nuestra base de conocimiento o abrí un ticket.</p>'
+    +   '<div class="mx-auto mt-4 flex max-w-xl gap-2">'
+    +     '<input id="q" class="w-full rounded-xl px-4 py-3 text-slate-800" placeholder="Buscar una duda… (ej: resetear contraseña)" />'
+    +     '<button id="go" class="rounded-xl bg-white/20 px-4 font-medium hover:bg-white/30">Buscar</button>'
+    +   '</div>'
+    + '</section>';
+
+  const catChips = cats.length
+    ? '<div class="mt-6 flex flex-wrap gap-2">' + cats.map((c) =>
+        '<button data-cat="' + esc(c.category) + '" class="cat-chip rounded-full border bg-white px-3 py-1.5 text-sm hover:border-cyan-300">'
+        + (CAT_ICON[c.category] || "📄") + ' ' + esc(c.category) + ' <span class="text-slate-400">' + c.count + '</span></button>').join("")
+      + '</div>'
+    : '';
+
+  const artList = arts.length
+    ? '<div class="mt-4 grid gap-3 sm:grid-cols-2">' + arts.map(articleCard).join("") + '</div>'
+    : '<div class="mt-4 rounded-xl border border-dashed bg-white p-8 text-center text-sm text-slate-400">Todavía no hay artículos publicados. Si tenés una duda, <button id="empty-new" class="text-cyan-600 underline">abrí un ticket</button>.</div>';
+
+  const help = ''
+    + '<section class="mt-8 rounded-2xl border bg-white p-5">'
+    +   '<div class="flex flex-col items-center gap-2 text-center sm:flex-row sm:justify-between sm:text-left">'
+    +     '<div><div class="font-semibold text-slate-800">¿No encontraste lo que buscabas?</div>'
+    +     '<div class="text-sm text-slate-500">Nuestro equipo de soporte te responde directamente.</div></div>'
+    +     '<button id="cta-new" class="rounded-xl bg-cyan-600 px-4 py-2 font-medium text-white hover:bg-cyan-700">Abrir un ticket</button>'
+    +   '</div>'
+    + '</section>';
+
+  app.innerHTML = shell(hero
+    + stats
+    + '<h2 class="mt-8 text-sm font-semibold uppercase tracking-wide text-slate-400">Categorías</h2>' + catChips
+    + '<h2 class="mt-6 text-sm font-semibold uppercase tracking-wide text-slate-400">Artículos destacados</h2>' + artList
+    + help);
+  wireShell();
+  const doSearch = () => { const q = document.getElementById("q").value.trim(); if (q) viewSearch(q); };
+  document.getElementById("go").onclick = doSearch;
+  document.getElementById("q").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
+  const cta = document.getElementById("cta-new"); if (cta) cta.onclick = () => viewNewTicket();
+  const en = document.getElementById("empty-new"); if (en) en.onclick = () => viewNewTicket();
+  document.querySelectorAll("[data-cat]").forEach((b) => b.onclick = () => viewSearch("", b.dataset.cat));
+  document.querySelectorAll("[data-slug]").forEach((b) => b.onclick = () => viewArticle(b.dataset.slug));
+}
+
+// ── Resultados de búsqueda / categoría ────────────────────────────────────────
+async function viewSearch(q, category) {
+  loading();
+  let arts = [];
+  const qs = [];
+  if (q) qs.push("q=" + encodeURIComponent(q));
+  if (category) qs.push("category=" + encodeURIComponent(category));
+  try { arts = (await api("/kb/articles" + (qs.length ? "?" + qs.join("&") : ""))).articles; }
+  catch { return sessionDead(); }
+  const title = category ? ("Categoría: " + esc(category)) : ('Resultados para "' + esc(q) + '"');
+  const list = arts.length
+    ? '<div class="mt-4 grid gap-3 sm:grid-cols-2">' + arts.map(articleCard).join("") + '</div>'
+    : '<div class="mt-4 rounded-xl border border-dashed bg-white p-8 text-center text-sm text-slate-500">Sin resultados. Probá otras palabras o <button id="sr-new" class="text-cyan-600 underline">abrí un ticket</button>.</div>';
+  app.innerHTML = shell(''
+    + '<button id="back" class="mb-4 text-sm text-cyan-600 hover:underline">← Volver al inicio</button>'
+    + '<div class="flex items-center gap-2"><input id="q" class="w-full max-w-xl rounded-xl border px-4 py-2.5" value="' + (q ? esc(q) : "") + '" placeholder="Buscar…" />'
+    + '<button id="go" class="rounded-xl bg-cyan-600 px-4 py-2.5 font-medium text-white">Buscar</button></div>'
+    + '<h2 class="mt-5 text-lg font-semibold text-slate-800">' + title + '</h2>'
+    + '<p class="text-sm text-slate-400">' + arts.length + ' artículo(s)</p>'
+    + list);
+  wireShell();
+  document.getElementById("back").onclick = viewHome;
+  const doSearch = () => { const v = document.getElementById("q").value.trim(); if (v) viewSearch(v); };
+  document.getElementById("go").onclick = doSearch;
+  document.getElementById("q").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
+  const srn = document.getElementById("sr-new"); if (srn) srn.onclick = () => viewNewTicket();
+  document.querySelectorAll("[data-slug]").forEach((b) => b.onclick = () => viewArticle(b.dataset.slug));
+}
+
+// ── Artículo ──────────────────────────────────────────────────────────────────
+async function viewArticle(slug) {
+  loading();
+  let a;
+  try { a = (await api("/kb/articles/" + encodeURIComponent(slug))).article; }
+  catch (e) { return viewHome(); }
+  const tags = (a.tags || []).length ? '<div class="mt-4 flex flex-wrap gap-1.5">' + a.tags.map((t) => '<span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">#' + esc(t) + '</span>').join("") + '</div>' : '';
+  app.innerHTML = shell(''
+    + '<button id="back" class="mb-4 text-sm text-cyan-600 hover:underline">← Volver</button>'
+    + '<article class="rounded-2xl border bg-white p-6 shadow-sm">'
+    +   '<div class="text-[11px] text-slate-400"><span class="rounded bg-slate-100 px-2 py-0.5">' + esc(a.category) + '</span> · ' + (a.view_count || 0) + ' vistas</div>'
+    +   '<h1 class="mt-2 text-2xl font-bold text-slate-800">' + esc(a.title) + '</h1>'
+    +   '<div class="kb-prose mt-4 text-slate-700">' + (a.body_html || "") + '</div>'
+    +   tags
+    +   '<div id="feedback" class="mt-6 rounded-xl border bg-slate-50 p-4 text-center">'
+    +     '<div class="text-sm font-medium text-slate-700">¿Te resultó útil este artículo?</div>'
+    +     '<div class="mt-2 flex justify-center gap-2">'
+    +       '<button id="yes" class="rounded-lg border bg-white px-4 py-1.5 text-sm hover:border-emerald-300">👍 Sí</button>'
+    +       '<button id="no" class="rounded-lg border bg-white px-4 py-1.5 text-sm hover:border-red-300">👎 No</button>'
+    +     '</div>'
+    +   '</div>'
+    + '</article>'
+    + '<section class="mt-5 rounded-2xl border bg-white p-5 text-center sm:flex sm:items-center sm:justify-between sm:text-left">'
+    +   '<div><div class="font-semibold text-slate-800">¿Seguís con dudas?</div><div class="text-sm text-slate-500">Abrí un ticket y te ayudamos.</div></div>'
+    +   '<button id="art-new" class="mt-3 rounded-xl bg-cyan-600 px-4 py-2 font-medium text-white hover:bg-cyan-700 sm:mt-0">Abrir un ticket</button>'
+    + '</section>');
+  wireShell();
+  document.getElementById("back").onclick = () => history.length > 1 ? history.back() : viewHome();
+  document.getElementById("art-new").onclick = () => viewNewTicket(a.title);
+  const vote = async (helpful) => {
+    try {
+      await api("/kb/articles/" + encodeURIComponent(slug) + "/vote", { method: "POST", body: JSON.stringify({ helpful }) });
+      document.getElementById("feedback").innerHTML = '<div class="text-sm text-emerald-700">¡Gracias por tu opinión! 🙌</div>';
+    } catch (e) { alert(e.message); }
+  };
+  document.getElementById("yes").onclick = () => vote(true);
+  document.getElementById("no").onclick = () => vote(false);
+}
+
+// ── Abrir un ticket ───────────────────────────────────────────────────────────
+function viewNewTicket(prefillSubject) {
+  const prefill = typeof prefillSubject === "string" ? prefillSubject : "";
+  app.innerHTML = shell(''
+    + '<button id="back" class="mb-4 text-sm text-cyan-600 hover:underline">← Volver</button>'
+    + '<div class="mx-auto max-w-xl rounded-2xl border bg-white p-6 shadow-sm">'
+    +   '<h1 class="text-xl font-bold text-slate-800">Abrir un ticket</h1>'
+    +   '<p class="mt-1 text-sm text-slate-500">Contanos tu consulta y nuestro equipo te responderá.</p>'
+    +   '<label class="mt-4 block text-sm font-medium">Asunto</label>'
+    +   '<input id="subject" class="mt-1 w-full rounded-xl border px-3 py-2.5" placeholder="Resumen breve de tu consulta" value="' + (prefill ? esc(prefill) : "") + '" />'
+    +   '<label class="mt-3 block text-sm font-medium">Prioridad</label>'
+    +   '<select id="priority" class="mt-1 w-full rounded-xl border px-3 py-2.5">'
+    +     '<option value="LOW">Baja</option><option value="MEDIUM" selected>Media</option><option value="HIGH">Alta</option><option value="URGENT">Urgente</option>'
+    +   '</select>'
+    +   '<label class="mt-3 block text-sm font-medium">Descripción</label>'
+    +   '<textarea id="body" rows="6" class="mt-1 w-full rounded-xl border p-3" placeholder="Describí tu duda o problema con el mayor detalle posible…"></textarea>'
+    +   '<div id="msg" class="mt-2 text-sm text-red-600"></div>'
+    +   '<button id="create" class="mt-4 w-full rounded-xl bg-cyan-600 py-2.5 font-medium text-white hover:bg-cyan-700">Enviar ticket</button>'
+    + '</div>');
+  wireShell();
+  document.getElementById("back").onclick = viewHome;
+  document.getElementById("create").onclick = async () => {
+    const subject = document.getElementById("subject").value.trim();
+    const body = document.getElementById("body").value.trim();
+    const priority = document.getElementById("priority").value;
+    const msg = document.getElementById("msg");
+    if (!subject || !body) { msg.textContent = "Completá el asunto y la descripción."; return; }
+    const btn = document.getElementById("create"); btn.disabled = true; btn.textContent = "Enviando…";
+    try { const r = await api("/tickets", { method: "POST", body: JSON.stringify({ subject, body, priority }) }); viewTicket(r.ref); }
+    catch (e) { msg.textContent = e.message; btn.disabled = false; btn.textContent = "Enviar ticket"; }
+  };
+}
+
+// ── Mis tickets ───────────────────────────────────────────────────────────────
+async function viewTickets() {
+  loading();
+  let list;
+  try { if (!ME) ME = await api("/me"); list = await api("/tickets"); }
+  catch { return sessionDead(); }
+  const rows = list.tickets.map((t) =>
+    '<button data-ref="' + esc(t.ref) + '" class="tk-row flex w-full items-center justify-between gap-3 border-b p-3 text-left last:border-0 hover:bg-slate-50">'
+    + '<div class="min-w-0"><div class="truncate font-medium text-slate-800">' + esc(t.subject) + '</div>'
+    + '<div class="text-xs text-slate-400">' + esc(t.ref) + ' · ' + fmt(t.updatedAt) + '</div></div>'
+    + '<span class="shrink-0 rounded-full px-2.5 py-1 text-xs ' + (STATUS_CLS[t.status] || "bg-slate-100") + '">' + (STATUS_ES[t.status] || t.status) + '</span>'
+    + '</button>').join("");
+  app.innerHTML = shell(''
+    + '<div class="flex items-center justify-between"><h1 class="text-xl font-bold text-slate-800">Mis tickets</h1>'
+    + '<button id="new" class="rounded-xl bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-700">+ Abrir ticket</button></div>'
+    + '<div class="mt-4 overflow-hidden rounded-2xl border bg-white shadow-sm">' + (rows || '<div class="p-8 text-center text-sm text-slate-400">No tenés tickets todavía.</div>') + '</div>');
+  wireShell();
+  document.getElementById("new").onclick = () => viewNewTicket();
+  document.querySelectorAll("[data-ref]").forEach((b) => b.onclick = () => viewTicket(b.dataset.ref));
+}
+
+// ── Reloj en vivo del panel lateral (hora + fecha). Un solo timer global que se
+//    reinicia en cada render para no acumular intervalos. ──
+let SIDE_CLOCK = null;
+function startSideClock() {
+  if (SIDE_CLOCK) { clearInterval(SIDE_CLOCK); SIDE_CLOCK = null; }
+  const tick = () => {
+    const t = document.getElementById("side-clock-time");
+    const dEl = document.getElementById("side-clock-date");
+    if (!t || !dEl) { clearInterval(SIDE_CLOCK); SIDE_CLOCK = null; return; }
+    const now = new Date();
+    t.textContent = now.toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    dEl.textContent = now.toLocaleDateString("es-PY", { weekday: "long", day: "numeric", month: "long" });
+  };
+  tick();
+  SIDE_CLOCK = setInterval(tick, 1000);
+}
+
+// ── Panel lateral estilo Slack: herramientas (reloj, historial, KB, plantillas) ──
+function sideToolsHtml(tks, currentRef) {
+  const clock = '<div class="rounded-2xl border border-slate-200 bg-white p-3 text-center shadow-sm">'
+    + '<div id="side-clock-time" class="text-2xl font-bold tabular-nums text-slate-800">--:--:--</div>'
+    + '<div id="side-clock-date" class="mt-0.5 text-[11px] capitalize text-slate-500">—</div>'
+    + '</div>';
+
+  const histItems = (tks || []).slice(0, 12).map((t) => {
+    const active = t.ref === currentRef;
+    const dotCls = (STATUS_CLS[t.status] || "bg-slate-100 text-slate-600").split(" ")[0];
+    return '<button data-hist="' + esc(t.ref) + '" class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-slate-50 '
+      + (active ? "bg-cyan-50 ring-1 ring-cyan-200" : "") + '">'
+      + '<span class="mt-0.5 h-2 w-2 shrink-0 rounded-full ' + dotCls + '"></span>'
+      + '<span class="min-w-0 flex-1"><span class="block truncate font-medium text-slate-700">' + esc(t.subject) + '</span>'
+      + '<span class="block text-[10px] text-slate-400">' + fmt(t.updatedAt) + '</span></span>'
+      + '</button>';
+  }).join("") || '<p class="px-2 text-[11px] text-slate-400">Sin otras conversaciones.</p>';
+  const history = '<div class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">'
+    + '<div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Historial de comunicación</div>'
+    + '<div class="mt-2 max-h-64 space-y-0.5 overflow-y-auto">' + histItems + '</div>'
+    + '</div>';
+
+  const kb = '<div class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">'
+    + '<div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Base de conocimiento</div>'
+    + '<div class="mt-2 flex gap-1">'
+    +   '<input id="side-kb-q" class="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs" placeholder="Buscar ayuda…" />'
+    +   '<button id="side-kb-go" class="shrink-0 rounded-lg bg-cyan-600 px-2.5 text-sm text-white hover:bg-cyan-700">🔍</button>'
+    + '</div></div>';
+
+  const tmpl = '<div class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">'
+    + '<div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Plantillas / respuestas rápidas</div>'
+    + '<div class="mt-2 space-y-1">'
+    + QUICK_REPLIES.map((q, i) => '<button data-tmpl="' + i + '" class="block w-full truncate rounded-lg border border-slate-100 px-2 py-1.5 text-left text-[11px] text-slate-600 hover:border-cyan-200 hover:bg-cyan-50" title="' + esc(q) + '">⚡ ' + esc(q) + '</button>').join("")
+    + '</div></div>';
+
+  return '<aside class="hidden w-60 shrink-0 space-y-3 lg:block">' + clock + history + kb + tmpl + '</aside>';
+}
+
+// ── Detalle de ticket (estilo Slack: panel lateral + canal de chat) ───────────
+async function viewTicket(ref) {
+  loading();
+  let d, tks = [];
+  try {
+    [d, tks] = await Promise.all([
+      api("/tickets/" + encodeURIComponent(ref)).then((r) => r.ticket),
+      api("/tickets").then((r) => r.tickets).catch(() => []),
+    ]);
+  } catch (e) { return viewTickets(); }
+  const msgs = d.messages.map(msgRow).join("");
+  const ars = d.actionRequests.map((ar) => renderActionRequest(ar)).join("");
+
+  const showCsat = d.status === "RESUELTO" || d.status === "CERRADO";
+  let csatHtml = "";
+  if (showCsat && d.csatScore) {
+    csatHtml = '<div class="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Gracias por tu calificación: ' + "★".repeat(d.csatScore) + "☆".repeat(5 - d.csatScore) + '</div>';
+  } else if (showCsat) {
+    csatHtml = '<div id="csat" class="mt-3 rounded-xl border p-4">'
+      + '<div class="text-sm font-medium text-slate-700">¿Cómo fue nuestra atención?</div>'
+      + '<div class="mt-2 flex gap-1">' + [1,2,3,4,5].map((n) => '<button data-star="' + n + '" class="text-2xl text-slate-300">★</button>').join("") + '</div>'
+      + '<textarea id="csat-comment" class="mt-2 w-full rounded-lg border p-2 text-sm" rows="2" placeholder="Comentario (opcional)"></textarea>'
+      + '<div class="mt-2 flex justify-end"><button id="csat-send" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white">Enviar calificación</button></div>'
+      + '</div>';
+  }
+  const composer = d.status !== "CERRADO"
+    ? '<div class="composer rounded-xl border border-slate-200 bg-white p-2">'
+      +   '<div id="attach-chips" class="mb-1 hidden flex-wrap gap-1 px-1"></div>'
+      +   '<div class="flex items-end gap-1.5">'
+      +     '<button id="btn-attach" title="Adjuntar archivo" class="act-btn grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-500 hover:bg-slate-100">📎</button>'
+      +     '<input id="file-input" type="file" multiple class="hidden" />'
+      +     '<textarea id="reply" rows="1" class="max-h-32 min-h-[2.25rem] flex-1 resize-none rounded-xl border-0 bg-transparent px-2 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-0" placeholder="Escribí una respuesta…"></textarea>'
+      +     '<button id="reply-send" class="act-btn inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-cyan-600 px-3.5 text-sm font-medium text-white hover:bg-cyan-700 active:bg-cyan-800"><span>Enviar</span><span class="text-base leading-none">➤</span></button>'
+      +   '</div>'
+      + '</div>'
+    : '<div class="rounded-xl border border-dashed border-slate-200 p-3 text-center text-xs text-slate-400">Este ticket está cerrado.</div>';
+
+  // Canal de chat (caja con header fijo, hilo scrolleable y composer al pie).
+  const channel = '<section class="flex min-w-0 flex-1 flex-col rounded-2xl border border-slate-200 bg-white shadow-sm" style="height:calc(100vh - 11rem)">'
+    + '<header class="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">'
+    +   '<div class="min-w-0"><div class="font-mono text-[11px] text-slate-400">' + esc(d.ref) + '</div>'
+    +   '<h1 class="truncate text-base font-semibold text-slate-800">#' + esc(d.subject) + '</h1></div>'
+    +   '<span class="shrink-0 rounded-full px-2.5 py-1 text-xs ' + (STATUS_CLS[d.status] || "bg-slate-100") + '">' + (STATUS_ES[d.status] || d.status) + '</span>'
+    + '</header>'
+    + '<div id="thread-scroll" class="flex-1 space-y-2 overflow-y-auto px-3 py-3">'
+    +   (ars ? '<div class="mb-2"><h3 class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Acciones solicitadas</h3><div class="space-y-3">' + ars + '</div></div>' : "")
+    +   '<div id="thread" class="space-y-0.5">' + (msgs || '<p class="px-2 text-sm text-slate-400">Sin mensajes.</p>') + '</div>'
+    +   (d.status === "RESUELTO" ? '<div class="mt-3 px-1"><button id="reopen" class="act-btn rounded-xl border border-slate-200 px-3 py-1.5 text-sm hover:bg-slate-50">Reabrir ticket</button></div>' : "")
+    +   csatHtml
+    + '</div>'
+    + '<div class="border-t border-slate-100 p-2">' + composer + '</div>'
+    + '</section>';
+
+  app.innerHTML = shell(''
+    + '<button id="back" class="mb-3 text-sm text-cyan-600 hover:underline">← Mis tickets</button>'
+    + '<div class="flex items-start gap-4">' + sideToolsHtml(tks, ref) + channel + '</div>');
+  wireShell();
+  startSideClock();
+  document.getElementById("back").onclick = viewTickets;
+
+  // Panel lateral: historial (cambiar de conversación), KB (buscar), plantillas.
+  document.querySelectorAll("[data-hist]").forEach((b) => b.onclick = () => viewTicket(b.dataset.hist));
+  const kbQ = document.getElementById("side-kb-q");
+  const kbGo = () => { const q = kbQ.value.trim(); if (q) viewSearch(q); };
+  if (kbQ) { document.getElementById("side-kb-go").onclick = kbGo; kbQ.addEventListener("keydown", (e) => { if (e.key === "Enter") kbGo(); }); }
+
+  // Auto-scroll del hilo al último mensaje.
+  const scroll = document.getElementById("thread-scroll");
+  if (scroll) scroll.scrollTop = scroll.scrollHeight;
+
+  // Composer: auto-crecer, adjuntar (la API es de texto: los archivos se mencionan
+  // en el cuerpo) y enviar con indicador "analizando…".
+  const replyEl = document.getElementById("reply");
+  const attachNames = [];
+  const grow = () => { if (replyEl) { replyEl.style.height = "auto"; replyEl.style.height = Math.min(replyEl.scrollHeight, 128) + "px"; } };
+  const insertReply = (text) => { if (!replyEl) return; replyEl.value = replyEl.value ? (replyEl.value.trim() + " " + text) : text; replyEl.focus(); grow(); };
+  if (replyEl) {
+    replyEl.addEventListener("input", grow);
+    const fileInput = document.getElementById("file-input");
+    const chips = document.getElementById("attach-chips");
+    document.getElementById("btn-attach").onclick = () => fileInput.click();
+    fileInput.onchange = () => {
+      for (const f of fileInput.files) attachNames.push(f.name);
+      chips.innerHTML = attachNames.map((n, i) => '<span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">📎 ' + esc(n) + ' <button data-rmf="' + i + '" class="text-slate-400 hover:text-slate-600">✕</button></span>').join("");
+      chips.classList.toggle("hidden", attachNames.length === 0);
+      chips.querySelectorAll("[data-rmf]").forEach((x) => x.onclick = () => { attachNames.splice(Number(x.dataset.rmf), 1); fileInput.onchange(); });
+      fileInput.value = "";
+    };
+  }
+  // Plantillas del panel lateral → insertan en el composer.
+  document.querySelectorAll("[data-tmpl]").forEach((b) => b.onclick = () => insertReply(QUICK_REPLIES[Number(b.dataset.tmpl)]));
+
+  const rs = document.getElementById("reply-send");
+  if (rs) rs.onclick = async () => {
+    let body = replyEl.value.trim(); if (!body && !attachNames.length) return;
+    if (attachNames.length) body += (body ? "\n\n" : "") + "[Archivos a compartir: " + attachNames.join(", ") + "]";
+    rs.disabled = true;
+    const thread = document.getElementById("thread");
+    thread.insertAdjacentHTML("beforeend", msgRow({ authorType: "CLIENT", author: "Tú", body, createdAt: new Date().toISOString(), hasReport: false, hasPlaybook: false }));
+    thread.insertAdjacentHTML("beforeend", typingBubbleHtml());
+    if (scroll) scroll.scrollTop = scroll.scrollHeight;
+    try { await api("/tickets/" + encodeURIComponent(ref) + "/reply", { method: "POST", body: JSON.stringify({ body }) }); viewTicket(ref); }
+    catch (e) { document.getElementById("typing-row")?.remove(); rs.disabled = false; alert(e.message); }
+  };
+  const ro = document.getElementById("reopen");
+  if (ro) ro.onclick = async () => { try { await api("/tickets/" + encodeURIComponent(ref) + "/reopen", { method: "POST", body: "{}" }); viewTicket(ref); } catch (e) { alert(e.message); } };
+  const csatBox = document.getElementById("csat");
+  if (csatBox) {
+    let score = 0;
+    const stars = [...csatBox.querySelectorAll("[data-star]")];
+    stars.forEach((s) => s.onclick = () => {
+      score = Number(s.dataset.star);
+      stars.forEach((x) => { const on = Number(x.dataset.star) <= score; x.classList.toggle("text-amber-400", on); x.classList.toggle("text-slate-300", !on); });
+    });
+    document.getElementById("csat-send").onclick = async () => {
+      if (!score) return alert("Elegí una puntuación (1 a 5 estrellas).");
+      try { await api("/tickets/" + encodeURIComponent(ref) + "/csat", { method: "POST", body: JSON.stringify({ score, comment: document.getElementById("csat-comment").value.trim() || null }) }); viewTicket(ref); }
+      catch (e) { alert(e.message); }
+    };
+  }
+  document.querySelectorAll("[data-report]").forEach((b) => b.onclick = async () => {
+    try { openDocModal(await apiText("/tickets/" + encodeURIComponent(ref) + "/messages/" + b.dataset.report + "/report"), "Informe del incidente"); }
+    catch (e) { alert(e.message); }
+  });
+  document.querySelectorAll("[data-playbook]").forEach((b) => b.onclick = async () => {
+    try { openDocModal(await apiText("/tickets/" + encodeURIComponent(ref) + "/messages/" + b.dataset.playbook + "/playbook"), "Playbook de respuesta"); }
+    catch (e) { alert(e.message); }
+  });
+  wireActionRequests(ref);
+}
+
+function renderActionRequest(ar) {
+  const decided = ar.status !== "PENDIENTE";
+  // Paleta armonizada: emerald (positivo) · slate (neutral) · amber (precaución).
+  // Se elimina el morado estridente; riesgo aceptado pasa a ámbar suave.
+  const badgeCls = ar.status === "RIESGO_ACEPTADO" ? "bg-amber-100 text-amber-800"
+    : ar.status === "EJECUTADA" ? "bg-emerald-100 text-emerald-700"
+    : decided ? "bg-slate-100 text-slate-600"
+    : "bg-amber-50 text-amber-700 ring-1 ring-amber-200";
+  const urgency = ar.urgency ? '<span class="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-600">' + esc(ar.urgency) + '</span>' : "";
+  // Acción recomendada → checklist interactiva (sólo mientras está pendiente).
+  const checklist = !decided
+    ? checklistHtml(ar.id, splitSteps(ar.recommendedSteps))
+    : (ar.recommendedSteps ? '<p class="mt-2 text-xs text-slate-500">Pasos: ' + esc(ar.recommendedSteps) + '</p>' : "");
+  let footer = "";
+  if (decided) {
+    if (ar.status === "RIESGO_ACEPTADO") {
+      const review = ar.riskReviewAt ? " · revisión " + fmt(ar.riskReviewAt) : "";
+      footer = '<p class="mt-2 rounded-lg bg-amber-50 px-2 py-1 text-xs text-amber-800">Riesgo asumido por ' + esc(ar.riskAcceptedBy) + review + '</p>';
+    } else if (ar.decisionNote) {
+      footer = '<p class="mt-2 text-xs text-slate-500">' + esc(ar.decisionNote) + '</p>';
+    }
+  } else {
+    const actions = '<div class="mt-3 flex flex-wrap gap-2" data-ar="' + esc(ar.id) + '">'
+      + '<button class="act-btn inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 active:bg-emerald-800">✓ Ejecutada</button>'
+      + '<button class="act-btn inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 active:bg-slate-100">⏱ Diferir</button>'
+      + '<button class="act-btn inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 active:bg-amber-200">⚠ Aceptar el riesgo</button>'
+      + '</div>';
+    const riskForm = '<div class="mt-2 hidden rounded-xl border border-amber-200 bg-amber-50 p-3" data-risk="' + esc(ar.id) + '">'
+      + '<p class="text-xs font-medium text-amber-800">Asumir formalmente el riesgo de NO ejecutar esta acción.</p>'
+      + '<input class="ri-by mt-2 w-full rounded-lg border border-amber-200 px-2 py-1.5 text-sm" placeholder="Nombre y cargo de quien acepta" />'
+      + '<input class="ri-scope mt-1.5 w-full rounded-lg border border-amber-200 px-2 py-1.5 text-sm" placeholder="Riesgo residual que se asume" />'
+      + '<input class="ri-review mt-1.5 w-full rounded-lg border border-amber-200 px-2 py-1.5 text-sm" type="date" />'
+      + '<div class="mt-2 flex justify-end"><button class="act-btn rounded-xl bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 active:bg-amber-800">Confirmar aceptación de riesgo</button></div>'
+      + '</div>';
+    footer = actions + riskForm;
+  }
+  return '<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">'
+    + '<div class="flex items-center gap-2">'
+    +   '<span class="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-cyan-50 text-cyan-700">⚙️</span>'
+    +   '<span class="font-medium text-slate-800">' + (ACT_ES[ar.actionType] || ar.actionType) + '</span>' + urgency
+    +   '<span class="ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs ' + badgeCls + '">' + (ADEC_ES[ar.status] || ar.status) + '</span>'
+    + '</div>'
+    + '<p class="mt-2 text-sm font-medium text-slate-700">' + esc(ar.title) + '</p>'
+    + '<p class="text-sm text-slate-600">' + esc(ar.rationale) + '</p>' + checklist + footer + '</div>';
+}
+
+function wireActionRequests(ref) {
+  document.querySelectorAll("[data-ar]").forEach((box) => {
+    const id = box.dataset.ar;
+    const [exec, defer, risk] = box.querySelectorAll("button");
+    const decide = async (payload) => { try { await api("/action-requests/" + id + "/decide", { method: "POST", body: JSON.stringify(payload) }); viewTicket(ref); } catch (e) { alert(e.message); } };
+    exec.onclick = () => decide({ decision: "EJECUTADA", decisionNote: "Aplicado por el cliente" });
+    defer.onclick = () => { const until = prompt("¿Para cuándo? (YYYY-MM-DD)"); if (until) decide({ decision: "DIFERIDA", deferredUntil: until }); };
+    risk.onclick = () => document.querySelector('[data-risk="' + CSS.escape(id) + '"]').classList.toggle("hidden");
+    const riskBox = document.querySelector('[data-risk="' + CSS.escape(id) + '"]');
+    riskBox.querySelector("button").onclick = () => {
+      const by = riskBox.querySelector(".ri-by").value.trim();
+      const scope = riskBox.querySelector(".ri-scope").value.trim();
+      const review = riskBox.querySelector(".ri-review").value || null;
+      if (!by || !scope) return alert("Indicá quién acepta y el riesgo residual.");
+      decide({ decision: "RIESGO_ACEPTADO", riskAcceptedBy: by, riskAcceptanceScope: scope, riskReviewAt: review });
+    };
+  });
+  // Checklist: marcar pasos (estado persistido localmente por acción).
+  document.querySelectorAll("[data-chk]").forEach((box) => {
+    const id = box.dataset.chk;
+    box.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      cb.onchange = () => { cb.closest(".chk-item").classList.toggle("done", cb.checked); chkToggle(id, cb.dataset.i, cb.checked); };
+    });
+  });
+}
+
+// ── Integraciones: cómo usar la API (Slack, Teams, ITSM…) ─────────────────────
+function codeBlock(code) {
+  return '<pre class="mt-2 overflow-x-auto rounded-xl bg-slate-900 p-4 text-xs leading-relaxed text-slate-100"><code>' + esc(code) + '</code></pre>';
+}
+function integCard(title, desc, inner) {
+  return '<section class="rounded-2xl border bg-white p-5 shadow-sm">'
+    + '<h2 class="text-base font-semibold text-slate-800">' + title + '</h2>'
+    + (desc ? '<p class="mt-1 text-sm text-slate-500">' + desc + '</p>' : '')
+    + inner + '</section>';
+}
+function viewIntegrations() {
+  const base = location.origin + '/api/v1';
+  const intro = ''
+    + '<section class="rounded-2xl bg-gradient-to-br from-cyan-600 to-sky-700 p-6 text-white shadow-sm">'
+    +   '<h1 class="text-xl font-bold">Integraciones y API</h1>'
+    +   '<p class="mt-1 text-sm text-cyan-100">Conectá tus tickets con Slack, Microsoft Teams o tu propio sistema (ITSM/Jira/ServiceNow) usando nuestra API y webhooks.</p>'
+    + '</section>';
+
+  const auth = integCard('1 · Autenticación',
+    'La API usa un <b>token de servicio</b> (Bearer). Solicitá el tuyo a tu equipo de soporte; es personal de tu organización y no debe compartirse.',
+    codeBlock('Authorization: Bearer TU_TOKEN_DE_API\n\nBase URL:\n' + base));
+
+  const rest = integCard('2 · Consultar y abrir tickets (REST)',
+    'Ejemplos con <code>curl</code>. Los permisos del token definen lectura/escritura.',
+    codeBlock(
+      '# Listar tus tickets\n' +
+      'curl -H "Authorization: Bearer $TOKEN" \\\n  ' + base + '/tickets\n\n' +
+      '# Abrir un ticket\n' +
+      'curl -X POST -H "Authorization: Bearer $TOKEN" \\\n' +
+      '  -H "Content-Type: application/json" \\\n' +
+      '  -d \'{"subject":"VPN caída","body":"No conecta desde las 9am","priority":"HIGH"}\' \\\n  ' + base + '/tickets\n\n' +
+      '# Responder en un ticket\n' +
+      'curl -X POST -H "Authorization: Bearer $TOKEN" \\\n' +
+      '  -H "Content-Type: application/json" \\\n' +
+      '  -d \'{"body":"Adjunto los logs"}\' \\\n  ' + base + '/tickets/TKT-XXXX/reply'));
+
+  const webhook = integCard('3 · Webhooks (eventos en tiempo real)',
+    'Te avisamos cuando un ticket cambia: <code>ticket.created</code>, <code>ticket.message</code>, <code>ticket.status_changed</code>, <code>action_request.decided</code>. Cada entrega se firma con <b>HMAC-SHA256</b> en la cabecera <code>X-LegacyHunt-Signature</code>. Verificá la firma así:',
+    codeBlock(
+      '// Node.js (Express) — verificar la firma del webhook\n' +
+      'const crypto = require("crypto");\n' +
+      'function verify(req, secret) {\n' +
+      '  const sig = "sha256=" + crypto.createHmac("sha256", secret)\n' +
+      '    .update(JSON.stringify(req.body)).digest("hex");\n' +
+      '  return sig === req.headers["x-legacyhunt-signature"];\n' +
+      '}'));
+
+  const slack = integCard('4 · Reenviar a Slack',
+    'Recibí nuestros webhooks y publicá en un <b>Incoming Webhook</b> de Slack:',
+    codeBlock(
+      'app.post("/hooks/legacyhunt", async (req, res) => {\n' +
+      '  if (!verify(req, process.env.LH_SECRET)) return res.sendStatus(401);\n' +
+      '  const { event, data } = req.body;\n' +
+      '  await fetch(process.env.SLACK_WEBHOOK_URL, {\n' +
+      '    method: "POST", headers: { "Content-Type": "application/json" },\n' +
+      '    body: JSON.stringify({ text: `🎫 ${event}: ${data.ref} — ${data.subject || ""}` })\n' +
+      '  });\n' +
+      '  res.sendStatus(200);\n' +
+      '});'));
+
+  const teams = integCard('5 · Reenviar a Microsoft Teams',
+    'Mismo patrón usando un <b>Incoming Webhook</b> de Teams (tarjeta simple):',
+    codeBlock(
+      'await fetch(process.env.TEAMS_WEBHOOK_URL, {\n' +
+      '  method: "POST", headers: { "Content-Type": "application/json" },\n' +
+      '  body: JSON.stringify({\n' +
+      '    "@type": "MessageCard", "@context": "http://schema.org/extensions",\n' +
+      '    "summary": data.ref,\n' +
+      '    "title": `Ticket ${data.ref}`,\n' +
+      '    "text": `${event} — ${data.subject || ""}`\n' +
+      '  })\n' +
+      '});'));
+
+  app.innerHTML = shell(intro
+    + '<div class="mt-5 space-y-4">' + auth + rest + webhook + slack + teams + '</div>'
+    + '<p class="mt-5 text-center text-xs text-slate-400">¿Necesitás un token o ayuda para integrar? <button id="integ-new" class="text-cyan-600 underline">Abrí un ticket</button>.</p>');
+  wireShell();
+  const inew = document.getElementById("integ-new"); if (inew) inew.onclick = () => viewNewTicket();
+}
+
+function sessionDead() { SESSION = null; ME = null; localStorage.removeItem("portal_session"); viewLogin("Tu sesión expiró, pedí un nuevo enlace."); }
+
+// ── Arranque: ?token= → verificar magic-link; si hay sesión → home ────────────
+(async function start() {
+  const token = new URLSearchParams(location.search).get("token");
+  if (token) {
+    try {
+      const r = await api("/auth/verify", { method: "POST", body: JSON.stringify({ token }) });
+      SESSION = r.sessionToken; localStorage.setItem("portal_session", SESSION);
+      history.replaceState({}, "", location.pathname);
+    } catch { return viewLogin("El enlace no es válido o expiró. Pedí uno nuevo."); }
+  }
+  if (SESSION) return viewHome();
+  viewLogin();
+})();
+</script>
+</body>
+</html>

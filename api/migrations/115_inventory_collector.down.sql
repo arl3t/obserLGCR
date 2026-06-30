@@ -1,0 +1,11 @@
+-- 115_inventory_collector.down.sql — revierte 115_inventory_collector.sql
+DROP TABLE IF EXISTS inventory_containers;
+DROP TABLE IF EXISTS inventory_nics;
+DROP TABLE IF EXISTS inventory_partitions;
+DROP TABLE IF EXISTS inventory_users;
+DROP TABLE IF EXISTS inventory_services;
+DROP TABLE IF EXISTS inventory_ports;
+DROP TABLE IF EXISTS inventory_software;
+DROP TABLE IF EXISTS inventory_reports;
+DROP TABLE IF EXISTS inventory_hosts;
+DROP TABLE IF EXISTS agent_credentials;

@@ -1,0 +1,69 @@
+# obserLGCR — fork demo de LegacyHunt (solo Postgres, SIN autenticación).
+# Stack mínimo: postgres + api + dashboard. Sin Trino/MinIO/Keycloak/Airflow.
+#
+#   docker compose up -d --build
+#   → Dashboard:  http://localhost:8080
+#   → API:        http://localhost:8787/api/health
+#
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: obserlgcr-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-obserlgcr}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-obserlgcr}
+      POSTGRES_DB: ${PG_DATABASE:-obserlgcr}
+    volumes:
+      - obserlgcr-pgdata:/var/lib/postgresql/data
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-obserlgcr} -d ${PG_DATABASE:-obserlgcr}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./api
+    image: obserlgcr-api:local
+    container_name: obserlgcr-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # ── Sin autenticación (modo lab) ──────────────────────────────────────
+      OIDC_ENABLED: "false"
+      # ── Postgres ──────────────────────────────────────────────────────────
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: ${PG_USER:-obserlgcr}
+      PG_PASSWORD: ${PG_PASSWORD:-obserlgcr}
+      PG_DATABASE: ${PG_DATABASE:-obserlgcr}
+      PORT: "8787"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Sin data-lake: TRINO_URL vacío → las consultas de detección en vivo
+      # devuelven 0 filas (stub). Ver README → "Conectar datos reales".
+      TRINO_URL: ""
+    ports:
+      - "${API_PORT:-8787}:8787"
+
+  dashboard:
+    build:
+      context: ./dashboard
+      args:
+        VITE_API_BASE_URL: ""
+        VITE_OIDC_AUTHORITY: ""
+        VITE_TENANT_NAME: "obserLGCR"
+    image: obserlgcr-dashboard:local
+    container_name: obserlgcr-dashboard
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${DASHBOARD_PORT:-8080}:80"
+
+volumes:
+  obserlgcr-pgdata:

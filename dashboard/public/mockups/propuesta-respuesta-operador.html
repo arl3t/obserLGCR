@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LegacyHunt SOC — Respuesta a Caso (propuesta · tema dim)</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          /* Tema DIM — equilibrio entre oscuro y claro (azul-pizarra) */
+          canvas:  '#141a26',   /* fondo */
+          surface: '#1c2433',   /* tarjetas */
+          raise:   '#232d3f',   /* hover / inputs */
+          line:    '#2c3850',   /* bordes */
+          brand: { 50:'#1e2c47', 100:'#27395b', 400:'#6aa6ff', 500:'#4f8cf5', 600:'#3b7df0' },
+          /* escala de texto: 900 = más claro (titulares), 400 = más tenue */
+          ink: { 900:'#e8edf6', 700:'#c4cee0', 500:'#8a96ad', 400:'#5d6a84' },
+          crit: '#f26d6d', high: '#fb923c', med: '#f5c451', ok: '#52c98a', info: '#3fb6e6',
+        },
+        fontFamily: {
+          sans: ['Inter','system-ui','sans-serif'],
+          mono: ['JetBrains Mono','ui-monospace','monospace'],
+        },
+        boxShadow: {
+          card: '0 1px 2px rgba(0,0,0,.30), 0 1px 3px rgba(0,0,0,.24)',
+          pop:  '0 8px 28px rgba(0,0,0,.45)',
+        },
+      }
+    }
+  }
+</script>
+<style>
+  body { font-family: Inter, system-ui, sans-serif; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #2c3850; border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a4a68; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  details > summary { list-style:none; cursor:pointer; }
+  details > summary::-webkit-details-marker { display:none; }
+  .step-done .step-check { background:#52c98a; border-color:#52c98a; color:#0b1018; }
+  .step-done .step-label { color:#5d6a84; text-decoration: line-through; }
+  @keyframes pop { from{opacity:0; transform:translateY(6px)} to{opacity:1;transform:none} }
+  .toast { animation: pop .18s ease-out; }
+</style>
+</head>
+<body class="bg-canvas text-ink-700 antialiased">
+
+<!-- aviso propuesta -->
+<div class="bg-brand-50 border-b border-line text-center text-[12px] py-1.5 text-brand-400">
+  Propuesta de diseño · tema «Dim» (equilibrio oscuro/claro) — pantalla de respuesta del operador. Datos de ejemplo.
+</div>
+
+<!-- ════════════ TOP BAR ════════════ -->
+<header class="sticky top-0 z-30 bg-surface/90 backdrop-blur border-b border-line">
+  <div class="max-w-[1440px] mx-auto px-6 py-3 flex items-center gap-4">
+    <!-- breadcrumb + identidad -->
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="w-9 h-9 rounded-lg bg-brand-600 text-white grid place-items-center font-bold text-sm shrink-0">LH</div>
+      <div class="min-w-0">
+        <div class="text-[12px] text-ink-500 leading-none">Casos <span class="mx-1 text-ink-400">/</span> <span class="font-mono">f9f799e3</span></div>
+        <div class="flex items-center gap-2 mt-1">
+          <span class="font-semibold text-ink-900 truncate">Posible ransomware · IP externa maliciosa</span>
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-crit/15 text-crit text-[11px] font-semibold ring-1 ring-crit/30">
+            <span class="w-1.5 h-1.5 rounded-full bg-crit"></span>CRÍTICO
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex-1"></div>
+
+    <!-- SLA -->
+    <div class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-med/10 ring-1 ring-med/30">
+      <svg class="w-4 h-4 text-med" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 7v5l3 2"/></svg>
+      <div class="leading-none"><div class="text-[10px] uppercase tracking-wide text-med/80">SLA</div><div id="slaTxt" class="text-[13px] font-mono font-semibold text-med">14:32</div></div>
+    </div>
+
+    <!-- acciones primarias -->
+    <div class="flex items-center gap-2">
+      <button onclick="toast('Caso adoptado','ok')" class="px-3 py-2 rounded-lg text-[13px] font-medium text-ink-700 ring-1 ring-line hover:bg-raise">Adoptar</button>
+      <button onclick="toast('Escalado a L3 · Respuesta a Incidentes','high')" class="px-3 py-2 rounded-lg text-[13px] font-medium text-high ring-1 ring-high/30 hover:bg-high/10">Escalar</button>
+      <button onclick="document.getElementById('resolucion').scrollIntoView({behavior:'smooth'})" class="px-4 py-2 rounded-lg text-[13px] font-semibold text-white bg-brand-600 hover:bg-brand-500 shadow-card">Resolver caso</button>
+    </div>
+  </div>
+
+  <!-- stepper ciclo de vida -->
+  <div class="border-t border-line bg-surface">
+    <div class="max-w-[1440px] mx-auto px-6">
+      <ol class="flex items-center gap-2 text-[12px] py-2 overflow-x-auto">
+        <li class="flex items-center gap-2 text-ok font-medium"><span class="w-5 h-5 rounded-full bg-ok/15 ring-1 ring-ok/40 grid place-items-center text-[10px]">✓</span>Detectado</li>
+        <li class="w-8 h-px bg-line"></li>
+        <li class="flex items-center gap-2 text-brand-400 font-semibold"><span class="w-5 h-5 rounded-full bg-brand-600 text-white grid place-items-center text-[10px]">2</span>En análisis</li>
+        <li class="w-8 h-px bg-line"></li>
+        <li class="flex items-center gap-2 text-ink-400"><span class="w-5 h-5 rounded-full ring-1 ring-line grid place-items-center text-[10px]">3</span>Contención</li>
+        <li class="w-8 h-px bg-line"></li>
+        <li class="flex items-center gap-2 text-ink-400"><span class="w-5 h-5 rounded-full ring-1 ring-line grid place-items-center text-[10px]">4</span>Resolución</li>
+      </ol>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-[1440px] mx-auto px-6 py-6 grid grid-cols-12 gap-6">
+
+  <!-- ═══════ COLUMNA PRINCIPAL ═══════ -->
+  <section class="col-span-12 lg:col-span-8 space-y-5">
+
+    <!-- Resumen del incidente -->
+    <article class="bg-surface rounded-xl ring-1 ring-line shadow-card p-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-[15px] font-semibold text-ink-900">Resumen del incidente</h2>
+        <span class="text-[11px] text-ink-500 bg-raise px-2 py-0.5 rounded">veredicto automático · confianza alta</span>
+      </div>
+      <p class="text-[14px] leading-relaxed text-ink-700">
+        Una IP externa de <b class="text-ink-900">Microsoft Azure (Países Bajos)</b>, con reputación
+        <b class="text-crit">maliciosa confirmada</b>, está intentando <b class="text-ink-900">cifrar/destruir datos</b>
+        (técnica de <i>Impact</i>) y ya alcanzó <b class="text-crit">3 hosts internos</b>. El patrón coincide con
+        movimiento lateral previo. No es ruido: la IP figura en 14 motores de VirusTotal y AbuseIPDB la marca al 100&nbsp;%.
+      </p>
+
+      <dl class="grid grid-cols-2 sm:grid-cols-4 gap-px mt-5 bg-line rounded-lg overflow-hidden ring-1 ring-line">
+        <div class="bg-surface p-3"><dt class="text-[11px] text-ink-500">Reputación</dt><dd class="text-[14px] font-semibold text-crit mt-0.5">Maliciosa</dd><dd class="text-[11px] text-ink-500">VT 14/89 · Abuse 100%</dd></div>
+        <div class="bg-surface p-3"><dt class="text-[11px] text-ink-500">Alcance</dt><dd class="text-[14px] font-semibold text-high mt-0.5">3 hosts</dd><dd class="text-[11px] text-ink-500">+1 cuenta servicio</dd></div>
+        <div class="bg-surface p-3"><dt class="text-[11px] text-ink-500">Origen</dt><dd class="text-[14px] font-semibold text-ink-900 mt-0.5">Azure · NL</dd><dd class="text-[11px] text-ink-500">AS8075 · externo</dd></div>
+        <div class="bg-surface p-3"><dt class="text-[11px] text-ink-500">Detección</dt><dd class="text-[14px] font-semibold text-ink-900 mt-0.5">Wazuh</dd><dd class="text-[11px] text-ink-500">hace 26 min · 41 ev.</dd></div>
+      </dl>
+
+      <details class="mt-4 group">
+        <summary class="text-[12px] text-brand-400 hover:text-brand-500 font-medium inline-flex items-center gap-1">Ver evidencia y trazabilidad <span class="group-open:rotate-180 transition">▾</span></summary>
+        <div class="mt-2 rounded-lg bg-canvas ring-1 ring-line p-3 font-mono text-[11.5px] text-ink-700 leading-relaxed">
+          <div><span class="text-ink-400">flujo:</span> 20.251.40.204:443 → <span class="text-high">10.20.4.15</span> (FILE-SRV-02) → <span class="text-high">10.20.4.31</span></div>
+          <div><span class="text-ink-400">regla:</span> Wazuh 92213 «ransomware-like file deletions»</div>
+          <div><span class="text-ink-400">ventana:</span> 2026-06-06 13:04:11 → 13:29:50</div>
+        </div>
+      </details>
+    </article>
+
+    <!-- Respuesta recomendada -->
+    <article class="bg-surface rounded-xl ring-1 ring-line shadow-card overflow-hidden">
+      <div class="border-l-4 border-crit p-6">
+        <div class="flex items-center gap-2 mb-2">
+          <h2 class="text-[15px] font-semibold text-ink-900">Respuesta recomendada</h2>
+          <span class="text-[11px] font-semibold text-crit bg-crit/15 ring-1 ring-crit/30 px-2 py-0.5 rounded-full">Prioridad 1</span>
+        </div>
+        <div class="flex items-start justify-between gap-6 flex-wrap">
+          <div class="flex-1 min-w-[260px]">
+            <p class="text-[17px] font-semibold text-ink-900">Aislar el host comprometido FILE-SRV-02</p>
+            <p class="text-[13px] text-ink-500 mt-1">
+              Hay actividad tipo ransomware y movimiento lateral en curso. Contener el host corta la propagación
+              antes de investigar. Acción reversible (VLAN de cuarentena).
+            </p>
+            <details class="mt-2">
+              <summary class="text-[12px] text-brand-400 hover:text-brand-500 font-medium">¿Por qué esta acción primero?</summary>
+              <p class="mt-1 text-[12.5px] text-ink-500 border-l-2 border-brand-100 pl-3">
+                Severidad CRÍTICA + técnica <i>Impact</i> + 3 hosts ⇒ el playbook NIST prioriza <b>Contención</b>.
+                Bloquear solo la IP no detiene el daño ya iniciado dentro del host.
+              </p>
+            </details>
+          </div>
+          <div class="flex flex-col gap-2 w-full sm:w-56">
+            <button onclick="toast('FILE-SRV-02 movido a VLAN de cuarentena','ok'); markStep('s-isolate')" class="px-4 py-2.5 rounded-lg bg-crit text-white text-[13px] font-semibold hover:brightness-110 shadow-card">Aislar host</button>
+            <button onclick="toast('IP 20.251.40.204 bloqueada en firewall','ok'); markStep('s-block')" class="px-4 py-2.5 rounded-lg ring-1 ring-crit/40 text-crit text-[13px] font-medium hover:bg-crit/10">Bloquear IP en firewall</button>
+            <button onclick="toast('Caso escalado a L3','high')" class="px-4 py-2.5 rounded-lg ring-1 ring-line text-ink-700 text-[13px] font-medium hover:bg-raise">Escalar a L3</button>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- Plan de respuesta -->
+    <article class="bg-surface rounded-xl ring-1 ring-line shadow-card p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-[15px] font-semibold text-ink-900">Plan de respuesta</h2>
+        <span class="text-[11px] text-ink-500">playbook CRÍTICO · NIST SP 800-61</span>
+      </div>
+      <div class="flex items-center gap-3 mb-5">
+        <div class="flex-1 h-1.5 rounded-full bg-canvas overflow-hidden ring-1 ring-line">
+          <div id="planBar" class="h-full bg-ok transition-all duration-300" style="width:20%"></div>
+        </div>
+        <span id="planPct" class="text-[12px] font-mono text-ink-500">1/5</span>
+      </div>
+
+      <p class="text-[11px] font-semibold uppercase tracking-wide text-crit mb-2">Contener · ahora</p>
+      <ul class="space-y-2 mb-5">
+        <li id="s-isolate" class="step flex items-center gap-3 rounded-lg ring-1 ring-line p-3 hover:bg-raise">
+          <button onclick="markStep('s-isolate')" class="step-check shrink-0 w-5 h-5 rounded-md ring-1 ring-ink-400/60 grid place-items-center text-[11px] text-transparent">✓</button>
+          <div class="flex-1"><p class="step-label text-[13.5px] text-ink-900">Aislar host comprometido (VLAN cuarentena)</p><p class="text-[11px] text-ink-500">L2 · objetivo 20 min</p></div>
+          <button onclick="toast('Host aislado','ok');markStep('s-isolate')" class="text-[12px] px-2.5 py-1 rounded-md bg-crit/15 text-crit ring-1 ring-crit/30 hover:bg-crit/25">Aislar</button>
+        </li>
+        <li id="s-block" class="step flex items-center gap-3 rounded-lg ring-1 ring-line p-3 hover:bg-raise">
+          <button onclick="markStep('s-block')" class="step-check shrink-0 w-5 h-5 rounded-md ring-1 ring-ink-400/60 grid place-items-center text-[11px] text-transparent">✓</button>
+          <div class="flex-1"><p class="step-label text-[13.5px] text-ink-900">Bloquear IP en firewall perimetral</p><p class="text-[11px] text-ink-500">L2 · objetivo 15 min</p></div>
+          <button onclick="toast('IP bloqueada','ok');markStep('s-block')" class="text-[12px] px-2.5 py-1 rounded-md bg-crit/15 text-crit ring-1 ring-crit/30 hover:bg-crit/25">Bloquear</button>
+        </li>
+      </ul>
+
+      <p class="text-[11px] font-semibold uppercase tracking-wide text-info mb-2">Investigar · siguiente</p>
+      <ul class="space-y-2">
+        <li id="s-enrich" class="step step-done flex items-center gap-3 rounded-lg ring-1 ring-line p-3">
+          <button onclick="markStep('s-enrich')" class="step-check shrink-0 w-5 h-5 rounded-md ring-1 ring-ink-400/60 grid place-items-center text-[11px] text-transparent">✓</button>
+          <div class="flex-1"><p class="step-label text-[13.5px] text-ink-900">Enriquecer IOC (VT / AbuseIPDB / URLhaus)</p><p class="text-[11px] text-ink-500">automático · completado</p></div>
+          <span class="text-[12px] px-2.5 py-1 rounded-md bg-ok/15 text-ok ring-1 ring-ok/30">Listo</span>
+        </li>
+        <li id="s-auth" class="step flex items-center gap-3 rounded-lg ring-1 ring-line p-3 hover:bg-raise">
+          <button onclick="markStep('s-auth')" class="step-check shrink-0 w-5 h-5 rounded-md ring-1 ring-ink-400/60 grid place-items-center text-[11px] text-transparent">✓</button>
+          <div class="flex-1"><p class="step-label text-[13.5px] text-ink-900">Revisar logs de autenticación de los 3 hosts (24h)</p><p class="text-[11px] text-ink-500">L2 · objetivo 30 min</p></div>
+          <button onclick="toast('Abriendo logs correlacionados…','info')" class="text-[12px] px-2.5 py-1 rounded-md bg-brand-50 text-brand-400 ring-1 ring-brand-100 hover:bg-brand-100">Ver logs</button>
+        </li>
+        <li id="s-corr" class="step flex items-center gap-3 rounded-lg ring-1 ring-line p-3 hover:bg-raise">
+          <button onclick="markStep('s-corr')" class="step-check shrink-0 w-5 h-5 rounded-md ring-1 ring-ink-400/60 grid place-items-center text-[11px] text-transparent">✓</button>
+          <div class="flex-1"><p class="step-label text-[13.5px] text-ink-900">Correlacionar con incidentes 90 días (Iceberg)</p><p class="text-[11px] text-ink-500">automático</p></div>
+          <button onclick="toast('2 casos relacionados (mismo /24)','info')" class="text-[12px] px-2.5 py-1 rounded-md bg-brand-50 text-brand-400 ring-1 ring-brand-100 hover:bg-brand-100">Correlacionar</button>
+        </li>
+      </ul>
+
+      <p class="mt-4 text-[12px] text-ink-500">
+        ¿Necesitás el detalle forense completo?
+        <a href="#" onclick="toast('Abriría Investigación profunda','info');return false" class="text-brand-400 hover:text-brand-500 font-medium">Abrir investigación profunda →</a>
+      </p>
+    </article>
+
+    <!-- Resolución -->
+    <article id="resolucion" class="bg-surface rounded-xl ring-1 ring-line shadow-card p-6 scroll-mt-32">
+      <h2 class="text-[15px] font-semibold text-ink-900 mb-1">Resolución del caso</h2>
+      <p class="text-[12px] text-ink-500 mb-4">Elegí un desenlace. Se exige justificación y lección aprendida para cerrar.</p>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <button onclick="resolve('Verdadero positivo · mitigado')" class="text-left rounded-lg ring-1 ring-ok/40 p-3 hover:bg-ok/10"><p class="text-[13.5px] font-semibold text-ok">Resuelto</p><p class="text-[11px] text-ink-500">amenaza real, contenida</p></button>
+        <button onclick="resolve('Falso positivo')" class="text-left rounded-lg ring-1 ring-line p-3 hover:bg-raise"><p class="text-[13.5px] font-semibold text-ink-900">Falso positivo</p><p class="text-[11px] text-ink-500">no era amenaza</p></button>
+        <button onclick="resolve('Duplicado')" class="text-left rounded-lg ring-1 ring-line p-3 hover:bg-raise"><p class="text-[13.5px] font-semibold text-ink-900">Duplicado</p><p class="text-[11px] text-ink-500">ya existe otro caso</p></button>
+        <button onclick="resolve('Monitorear')" class="text-left rounded-lg ring-1 ring-line p-3 hover:bg-raise"><p class="text-[13.5px] font-semibold text-ink-900">Monitorear</p><p class="text-[11px] text-ink-500">vigilar sin cerrar</p></button>
+      </div>
+      <div id="closeForm" class="hidden mt-4">
+        <label class="text-[12px] font-medium text-ink-700">Justificación y lección aprendida <span class="text-crit">*</span></label>
+        <textarea rows="3" class="mt-1.5 w-full rounded-lg ring-1 ring-line focus:ring-2 focus:ring-brand-500 border-0 bg-canvas text-[13.5px] text-ink-900 p-3 outline-none placeholder:text-ink-400" placeholder="Causa → contención aplicada → cómo prevenirlo la próxima vez…"></textarea>
+        <button onclick="toast('Caso cerrado y documentado','ok')" class="mt-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-[13px] font-semibold hover:bg-brand-500">Confirmar cierre</button>
+      </div>
+    </article>
+  </section>
+
+  <!-- ═══════ SIDEBAR ═══════ -->
+  <aside class="col-span-12 lg:col-span-4 space-y-5">
+
+    <!-- SLA -->
+    <div class="bg-surface rounded-xl ring-1 ring-line shadow-card p-5">
+      <div class="flex items-center justify-between mb-2">
+        <p class="text-[13px] font-semibold text-ink-900">SLA · crítico (15 min)</p>
+        <span id="slaSide" class="text-[13px] font-mono font-semibold text-med">14:32</span>
+      </div>
+      <div class="h-2 rounded-full bg-canvas ring-1 ring-line overflow-hidden">
+        <div id="slaBar" class="h-full bg-med transition-all" style="width:3%"></div>
+      </div>
+      <p class="text-[11.5px] text-ink-500 mt-2">Acordá la contención antes de que venza el SLA.</p>
+    </div>
+
+    <!-- Detalles del caso -->
+    <div class="bg-surface rounded-xl ring-1 ring-line shadow-card p-5">
+      <p class="text-[13px] font-semibold text-ink-900 mb-3">Detalles del caso</p>
+      <dl class="text-[12.5px] divide-y divide-line">
+        <div class="flex justify-between py-2"><dt class="text-ink-500">Estado</dt><dd class="font-medium text-brand-400">En análisis</dd></div>
+        <div class="flex justify-between py-2"><dt class="text-ink-500">Dueño</dt><dd class="font-mono text-ink-900">vos · CI 3988739</dd></div>
+        <div class="flex justify-between py-2"><dt class="text-ink-500">IOC</dt><dd class="font-mono text-crit">20.251.40.204</dd></div>
+        <div class="flex justify-between py-2"><dt class="text-ink-500">Score</dt><dd class="text-ink-900"><b>81</b><span class="text-ink-400"> / 200</span></dd></div>
+        <div class="flex justify-between py-2"><dt class="text-ink-500">Técnica</dt><dd class="text-ink-900">TA0040 · Impact</dd></div>
+        <div class="flex justify-between py-2"><dt class="text-ink-500">Caso</dt><dd class="font-mono text-ink-500">f9f799e3…86da6</dd></div>
+      </dl>
+      <div class="mt-3 flex items-center gap-2 text-[11.5px] text-med bg-med/10 ring-1 ring-med/30 rounded-lg p-2">
+        <span>●</span><span>M. Duarte también mira este caso. Coordiná antes de cerrar.</span>
+      </div>
+    </div>
+
+    <!-- Activos afectados -->
+    <div class="bg-surface rounded-xl ring-1 ring-line shadow-card p-5">
+      <div class="flex items-center gap-2 mb-3"><p class="text-[13px] font-semibold text-ink-900">Activos afectados</p><span class="text-[11px] px-1.5 rounded bg-crit/15 text-crit ring-1 ring-crit/30">3</span></div>
+      <ul class="space-y-2">
+        <li class="flex items-center gap-2 rounded-lg ring-1 ring-crit/30 bg-crit/10 p-2.5">
+          <div class="flex-1"><p class="text-[13px] font-mono text-ink-900">FILE-SRV-02</p><p class="text-[11px] text-ink-500">10.20.4.15 · paciente cero</p></div>
+          <button onclick="toast('FILE-SRV-02 aislado','ok')" class="text-[11px] px-2 py-1 rounded-md bg-crit/15 text-crit ring-1 ring-crit/30 hover:bg-crit/25">Aislar</button>
+        </li>
+        <li class="flex items-center gap-2 rounded-lg ring-1 ring-line p-2.5">
+          <div class="flex-1"><p class="text-[13px] font-mono text-ink-900">WS-FIN-114</p><p class="text-[11px] text-ink-500">10.20.4.31 · lateral</p></div>
+          <button onclick="toast('WS-FIN-114 aislado','ok')" class="text-[11px] px-2 py-1 rounded-md ring-1 ring-line text-ink-700 hover:bg-raise">Aislar</button>
+        </li>
+        <li class="flex items-center gap-2 rounded-lg ring-1 ring-line p-2.5">
+          <div class="flex-1"><p class="text-[13px] font-mono text-ink-900">svc_backup</p><p class="text-[11px] text-ink-500">cuenta de servicio</p></div>
+          <button onclick="toast('Credenciales revocadas','ok')" class="text-[11px] px-2 py-1 rounded-md ring-1 ring-line text-ink-700 hover:bg-raise">Revocar</button>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Inteligencia del IOC -->
+    <div class="bg-surface rounded-xl ring-1 ring-line shadow-card p-5">
+      <p class="text-[13px] font-semibold text-ink-900 mb-3">Inteligencia del IOC</p>
+      <dl class="text-[12.5px] divide-y divide-line">
+        <div class="flex justify-between py-1.5"><dt class="text-ink-500">VirusTotal</dt><dd class="font-medium text-crit">14 / 89</dd></div>
+        <div class="flex justify-between py-1.5"><dt class="text-ink-500">AbuseIPDB</dt><dd class="font-medium text-crit">100% confianza</dd></div>
+        <div class="flex justify-between py-1.5"><dt class="text-ink-500">GreyNoise</dt><dd class="font-medium text-high">malicioso · escáner</dd></div>
+        <div class="flex justify-between py-1.5"><dt class="text-ink-500">Shodan</dt><dd class="text-ink-900">443, 3389 abiertos</dd></div>
+        <div class="flex justify-between py-1.5"><dt class="text-ink-500">ASN</dt><dd class="text-ink-900">AS8075 Microsoft</dd></div>
+      </dl>
+      <div class="grid grid-cols-2 gap-2 mt-3">
+        <button onclick="toast('Enviado a Slack del turno','info')" class="text-[12px] px-2 py-1.5 rounded-lg ring-1 ring-line text-ink-700 hover:bg-raise">Notificar Slack</button>
+        <button onclick="toast('Exportado a MISP · #2241','info')" class="text-[12px] px-2 py-1.5 rounded-lg ring-1 ring-line text-ink-700 hover:bg-raise">Exportar MISP</button>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<div id="toasts" class="fixed bottom-5 right-5 z-50 space-y-2"></div>
+
+<script>
+  const C = { ok:'#52c98a', info:'#3fb6e6', high:'#fb923c', crit:'#f26d6d', med:'#f5c451' };
+  function toast(msg, kind='info'){
+    const c = C[kind] || C.info;
+    const el = document.createElement('div');
+    el.className = 'toast bg-surface ring-1 shadow-pop rounded-lg px-4 py-2.5 text-[13px] text-ink-900 max-w-xs flex items-center gap-2';
+    el.style.setProperty('--tw-ring-color', c);
+    el.innerHTML = `<span style="color:${c}">●</span> ${msg}`;
+    document.getElementById('toasts').appendChild(el);
+    setTimeout(()=>{ el.style.transition='opacity .25s'; el.style.opacity='0'; setTimeout(()=>el.remove(),250); }, 2500);
+  }
+  function resolve(label){
+    toast('Desenlace: ' + label, 'info');
+    const f = document.getElementById('closeForm');
+    f.classList.remove('hidden');
+    f.scrollIntoView({behavior:'smooth', block:'center'});
+  }
+  function markStep(id){
+    document.getElementById(id)?.classList.toggle('step-done');
+    const all = document.querySelectorAll('.step').length;
+    const done = document.querySelectorAll('.step.step-done').length;
+    document.getElementById('planBar').style.width = Math.round(done/all*100) + '%';
+    document.getElementById('planPct').textContent = done + '/' + all;
+  }
+  // SLA countdown
+  let sla = 14*60+32, total = 15*60;
+  setInterval(()=>{
+    if(sla<=0) return; sla--;
+    const t = String(Math.floor(sla/60)).padStart(2,'0')+':'+String(sla%60).padStart(2,'0');
+    slaTxt.textContent = t; slaSide.textContent = t;
+    document.getElementById('slaBar').style.width = Math.min(100, Math.round((total-sla)/total*100)) + '%';
+  }, 1000);
+</script>
+</body>
+</html>
