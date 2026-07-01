@@ -564,15 +564,21 @@ export default function nocRouter() {
 
       const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
+
       const rows = await pgQuery(
-        `SELECT a.id, a.device_id, d.hostname, a.alert_type, a.status,
+        `SELECT a.id, a.device_id, d.hostname, d.ip_address::text AS ip_address,
+                a.alert_type, a.status,
                 a.triggered_at, a.resolved_at, a.ack_by, a.ack_at, a.notified, a.details
          FROM noc_alerts a
          JOIN noc_devices d ON d.id = a.device_id
          ${where}
-         ORDER BY a.triggered_at DESC
-         LIMIT 50`,
-        vals,
+         ORDER BY
+           CASE a.status WHEN 'open' THEN 0 WHEN 'ack' THEN 1 ELSE 2 END,
+           CASE a.alert_type WHEN 'down' THEN 0 WHEN 'high_cpu' THEN 1 WHEN 'high_mem' THEN 2 ELSE 3 END,
+           a.triggered_at DESC
+         LIMIT $${idx}`,
+        [...vals, limit],
       );
 
       return res.json({ success: true, data: rows, alerts: rows, meta: { total: rows.length } });
@@ -619,10 +625,21 @@ export default function nocRouter() {
       const operatorCi = req.user?.email ?? req.user?.preferred_username ?? "operator";
       const result = await openCaseFromNocAlert(req.params.id, { operatorCi });
       if (result.outcome === "not_found") {
-        return res.status(404).json({ success: false, error: "Alerta no encontrada." });
+        return res.status(404).json({ success: false, error: "Alerta no encontrada.", ...result });
       }
       if (result.outcome === "not_down") {
-        return res.status(400).json({ success: false, error: "Solo alertas tipo down generan incidente." });
+        return res.status(400).json({
+          success: false,
+          error: "Solo alertas tipo down generan incidente en gestión.",
+          ...result,
+        });
+      }
+      if (result.outcome === "not_open") {
+        return res.status(400).json({
+          success: false,
+          error: "La alerta ya está resuelta; no se puede abrir caso.",
+          ...result,
+        });
       }
       return res.json({ success: true, ...result });
     } catch (err) {

@@ -3,6 +3,7 @@
  * Fuente: GET /api/health + GET /api/noc/devices (refresco 60s).
  */
 
+import { Link } from "react-router-dom";
 import { Server, Wifi, WifiOff, AlertTriangle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
@@ -203,6 +204,12 @@ export function SystemHealthButton() {
                     ? "Hay dispositivos que requieren atención del operador NOC."
                     : "Sin alertas activas en este momento."}
                 </p>
+                <Link
+                  to="/noc?view=alerts"
+                  className="mt-2 inline-block text-[11px] font-medium text-cyan-400 hover:underline"
+                >
+                  Abrir bandeja de alertas NOC →
+                </Link>
               </div>
             </>
           )}

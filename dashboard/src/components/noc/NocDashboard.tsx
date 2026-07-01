@@ -1,15 +1,16 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { authFetch } from "@/lib/auth-fetch";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/auth/useAuth";
-import type { NocDevice } from "./types";
+import { deleteNocDevice, fetchNocAlerts, fetchNocDevices } from "@/api/noc";
+import type { NocAlert, NocDevice } from "./types";
 import { FleetUptimeMonitor } from "./uptime/FleetUptimeMonitor";
-import { NocGlobalPolicies } from "./NocGlobalPolicies";
+import { NocFleetAlerts } from "./NocFleetAlerts";
+import { NocHubNav, useNocHubView } from "./NocHubNav";
+import { NocSitesView } from "./NocSitesView";
+import { NocWallboard } from "./NocWallboard";
 
-// Re-export types for backwards compatibility
 export type { NocDevice, NocAlert } from "./types";
-
-// ─── Add Device Modal (sin cambios funcionales) ───────────────────────────────
 
 function AddDeviceModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
   const [form, setForm] = useState({
@@ -33,6 +34,7 @@ function AddDeviceModal({ onClose, onAdded }: { onClose: () => void; onAdded: ()
     e.preventDefault();
     setSaving(true);
     setError("");
+    const { authFetch } = await import("@/lib/auth-fetch");
     const res = await authFetch("/api/noc/devices", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -101,56 +103,30 @@ function AddDeviceModal({ onClose, onAdded }: { onClose: () => void; onAdded: ()
   );
 }
 
-// ─── Agent panel ──────────────────────────────────────────────────────────────
-
-function AgentDownloadPanel() {
-  const agents = [
-    { os: "Linux", file: "/agents/obserlgcr-noc-agent-linux.sh", name: "obserlgcr-noc-agent-linux.sh", setup: "chmod +x … && sudo ./obserlgcr-noc-agent-linux.sh --setup" },
-    { os: "macOS", file: "/agents/obserlgcr-noc-agent-macos.sh", name: "obserlgcr-noc-agent-macos.sh", setup: "chmod +x … && ./obserlgcr-noc-agent-macos.sh --setup" },
-    { os: "Windows", file: "/agents/obserlgcr-noc-agent-windows.ps1", name: "obserlgcr-noc-agent-windows.ps1", setup: "powershell -ExecutionPolicy Bypass -File .\\… -Setup" },
-  ];
-
-  return (
-    <section id="noc-agents" className="ut-card" aria-labelledby="agents-title">
-      <h2 id="agents-title" className="ut-chart-head__title">Instalación del agente</h2>
-      <p className="ut-sidebar__text" style={{ marginBottom: "1rem" }}>
-        Heartbeat cada 5 min · credencial lab: <code>noc-agent@obserlgcr.local</code>
-      </p>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {agents.map((a) => (
-          <div key={a.os} className="rounded border border-[var(--ut-border-subtle)] p-3">
-            <p className="ut-sidebar__title" style={{ marginBottom: "0.35rem" }}>{a.os}</p>
-            <a href={a.file} download={a.name} className="ut-btn ut-btn--sm" style={{ width: "100%" }}>
-              Descargar
-            </a>
-            <pre className="mt-2 overflow-x-auto rounded bg-black/40 p-2 text-[10px] text-emerald-400">{a.setup}</pre>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
 export function NocDashboard() {
   const { isLabMode, hasMinRole, isAuthenticated } = useAuth();
   const canAddDevices = isLabMode || hasMinRole("manager");
   const canDeleteDevices = isLabMode || isAuthenticated;
+  const view = useNocHubView();
+  const [params, setParams] = useSearchParams();
 
   const [devices, setDevices] = useState<NocDevice[]>([]);
+  const [alerts, setAlerts] = useState<NocAlert[]>([]);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState("");
+  const [siteDrill, setSiteDrill] = useState<string | null>(null);
 
   const refresh = useCallback(async (silent = false) => {
     if (!silent) setRefreshing(true);
     try {
-      const dr = await authFetch("/api/noc/devices");
-      const drJson = await dr.json();
-      const drPayload = (drJson.data ?? drJson.devices) as NocDevice[] | undefined;
-      setDevices(drPayload ?? []);
+      const [devs, alts] = await Promise.all([
+        fetchNocDevices(),
+        fetchNocAlerts({ limit: 200 }),
+      ]);
+      setDevices(devs);
+      setAlerts(alts);
       setLastRefresh(new Date());
     } finally {
       if (!silent) setRefreshing(false);
@@ -166,39 +142,71 @@ export function NocDashboard() {
     return () => clearInterval(t);
   }, [refresh]);
 
+  useEffect(() => {
+    const siteParam = params.get("site");
+    if (siteParam && view === "sites") {
+      setSiteDrill(siteParam);
+    }
+  }, [params, view]);
+
+  const openAlerts = alerts.filter((a) => a.status === "open" || a.status === "ack").length;
+
   async function deleteDevice(device: NocDevice) {
     const label = device.hostname || device.ip_address || device.id;
     if (!window.confirm(`¿Eliminar el activo "${label}"?\n\nSe borrarán métricas, alertas y logs asociados.`)) {
       return;
     }
-    const res = await authFetch(`/api/noc/devices/${device.id}`, { method: "DELETE" });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      toast.error(data.error ?? "No se pudo eliminar el activo.");
-      return;
+    try {
+      await deleteNocDevice(device.id);
+      toast.success(`Activo "${label}" eliminado`);
+      void refresh(true);
+    } catch {
+      toast.error("No se pudo eliminar el activo.");
     }
-    toast.success(`Activo "${label}" eliminado`);
-    void refresh(true);
+  }
+
+  function handleSiteFilter(site: string | null) {
+    setSiteDrill(site);
+    const next = new URLSearchParams(params);
+    if (site) next.set("site", site);
+    else next.delete("site");
+    setParams(next, { replace: true });
   }
 
   return (
-    <>
-      <FleetUptimeMonitor
-        devices={devices}
-        search={search}
-        onSearchChange={setSearch}
-        onRefresh={() => void refresh()}
-        refreshing={refreshing}
-        canAddDevices={canAddDevices}
-        canDeleteDevices={canDeleteDevices}
-        onDeleteDevice={deleteDevice}
-        onAddDevice={() => setShowAdd(true)}
-        lastRefresh={lastRefresh}
-      >
-        <AgentDownloadPanel />
-      </FleetUptimeMonitor>
-      <NocGlobalPolicies />
+    <div className="noc-hub px-6 pb-6">
+      <NocHubNav openAlerts={openAlerts} />
+
+      {view === "wallboard" && <NocWallboard devices={devices} alerts={alerts} />}
+
+      {view === "activos" && (
+        <FleetUptimeMonitor
+          devices={devices}
+          search={search}
+          onSearchChange={setSearch}
+          onRefresh={() => void refresh()}
+          refreshing={refreshing}
+          canAddDevices={canAddDevices}
+          canDeleteDevices={canDeleteDevices}
+          onDeleteDevice={deleteDevice}
+          onAddDevice={() => setShowAdd(true)}
+          lastRefresh={lastRefresh}
+        />
+      )}
+
+      {view === "alerts" && (
+        <NocFleetAlerts alerts={alerts} onChanged={() => void refresh(true)} />
+      )}
+
+      {view === "sites" && (
+        <NocSitesView
+          devices={devices}
+          siteFilter={siteDrill}
+          onSiteFilter={handleSiteFilter}
+        />
+      )}
+
       {showAdd && <AddDeviceModal onClose={() => setShowAdd(false)} onAdded={() => void refresh()} />}
-    </>
+    </div>
   );
 }

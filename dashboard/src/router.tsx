@@ -9,6 +9,7 @@ import { TicketsPage } from "@/pages/TicketsPage";
 import { TicketSettingsPage } from "@/pages/TicketSettingsPage";
 import { PlatformSettingsPage } from "@/pages/PlatformSettingsPage";
 import { NocPage, NocDeviceDetailPage } from "@/pages/NocPage";
+import { NocConfigPage } from "@/pages/NocConfigPage";
 import { LoginCallback } from "@/pages/LoginCallback";
 import { LoginPage } from "@/pages/LoginPage";
 import { RouteError } from "@/pages/RouteError";
@@ -42,6 +43,7 @@ export const router = createBrowserRouter([
           { path: "admin/settings", element: <PlatformSettingsPage />, loader: () => null },
           { path: "admin/tickets-config", element: <TicketSettingsPage />, loader: () => null },
           { path: "noc", element: <NocPage />, loader: () => null },
+          { path: "noc/config", element: <NocConfigPage />, loader: () => null },
           { path: "noc/:id", element: <NocDeviceDetailPage />, loader: () => null },
           { path: "incident-management", element: <Navigate to="/gestion" replace /> },
           { path: "enriched-score", element: <Navigate to="/soc?tab=score" replace /> },

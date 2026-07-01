@@ -24,9 +24,9 @@ export function NocStatusBadge({ status, label, pulse = true, className }: NocSt
       className={cn(
         "noc-status",
         key === "online" && "noc-status--online",
-        key === "offline" && pulse && "noc-status--offline",
-        key === "offline" && !pulse && "noc-status--offline",
+        key === "offline" && "noc-status--offline",
         key === "degraded" && "noc-status--degraded",
+        !pulse && "noc-status--static",
         className,
       )}
       role="status"

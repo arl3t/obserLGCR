@@ -1,4 +1,5 @@
 import { api } from "@/api/client";
+import type { NocAlert, NocDevice } from "@/components/noc/types";
 
 export interface SnmpSettings {
   default_community: string;
@@ -29,6 +30,112 @@ export interface SnmpDiscoveryResult {
   hosts_registered: number;
   duration_ms: number;
   results: SnmpDiscoveryHit[];
+}
+
+export interface NocMetricPoint {
+  t: string;
+  v: number;
+}
+
+export interface NocDeviceDetail extends NocDevice {
+  mac_address: string | null;
+  description: string | null;
+  agent_version: string | null;
+  cpu_threshold_pct: number;
+  mem_threshold_pct: number;
+  rtt_threshold_ms: number;
+  ssh_host: string | null;
+  ssh_port: number;
+  ssh_user: string | null;
+}
+
+export async function fetchNocDevices(): Promise<NocDevice[]> {
+  const { data } = await api.get<{ data?: NocDevice[]; devices?: NocDevice[] }>("/api/noc/devices");
+  return data.data ?? data.devices ?? [];
+}
+
+export async function fetchNocAlerts(params?: {
+  status?: string;
+  device_id?: string;
+  limit?: number;
+}): Promise<NocAlert[]> {
+  const { data } = await api.get<{ data?: NocAlert[]; alerts?: NocAlert[] }>("/api/noc/alerts", {
+    params,
+  });
+  return data.data ?? data.alerts ?? [];
+}
+
+export async function fetchNocDevice(id: string): Promise<NocDeviceDetail> {
+  const { data } = await api.get<{ data?: NocDeviceDetail; device?: NocDeviceDetail }>(
+    `/api/noc/devices/${id}`,
+  );
+  const row = data.data ?? data.device;
+  if (!row) throw new Error("Dispositivo no encontrado");
+  return row;
+}
+
+export async function patchNocDevice(
+  id: string,
+  body: Partial<{
+    hostname: string;
+    heartbeat_timeout_secs: number;
+    cpu_threshold_pct: number;
+    mem_threshold_pct: number;
+    rtt_threshold_ms: number;
+    description: string;
+    site: string;
+    device_type: string;
+  }>,
+): Promise<NocDeviceDetail> {
+  const { data } = await api.patch<{ data?: NocDeviceDetail; device?: NocDeviceDetail }>(
+    `/api/noc/devices/${id}`,
+    body,
+  );
+  const row = data.data ?? data.device;
+  if (!row) throw new Error("Error al actualizar");
+  return row;
+}
+
+export async function fetchNocMetrics(
+  deviceId: string,
+  metric: "rtt_ms" | "cpu_pct" | "mem_pct",
+  window = "24h",
+): Promise<NocMetricPoint[]> {
+  const { data } = await api.get<{ data?: NocMetricPoint[] }>(
+    `/api/noc/devices/${deviceId}/metrics`,
+    { params: { metric, window } },
+  );
+  return data.data ?? [];
+}
+
+export async function ackNocAlert(id: string): Promise<void> {
+  await api.patch(`/api/noc/alerts/${id}`, { action: "ack" });
+}
+
+export async function resolveNocAlert(id: string): Promise<void> {
+  await api.patch(`/api/noc/alerts/${id}`, { action: "resolve" });
+}
+
+export interface NocOpenIncidentResult {
+  outcome: string;
+  caseId?: string;
+  alertId?: string;
+  hostname?: string;
+}
+
+export async function openIncidentFromNocAlert(id: string): Promise<NocOpenIncidentResult> {
+  const { data } = await api.post<NocOpenIncidentResult & { success: boolean; error?: string }>(
+    `/api/noc/alerts/${id}/open-incident`,
+  );
+  if (!data.success && data.error) {
+    throw new Error(data.error);
+  }
+  return {
+    outcome: data.outcome ?? "created",
+    caseId: data.caseId,
+    alertId: data.alertId ?? id,
+    hostname: data.hostname,
+  };
 }
 
 export async function getSnmpSettings(): Promise<SnmpSettings> {

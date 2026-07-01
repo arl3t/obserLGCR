@@ -2,9 +2,9 @@ import { useState } from "react";
 import { ChevronDown, ShieldAlert } from "lucide-react";
 import { GovernancePanel } from "@/components/noc/governance/GovernancePanel";
 
-/** Políticas globales de software (listas BL/WL) — colapsable en el hub NOC. */
-export function NocGlobalPolicies() {
-  const [open, setOpen] = useState(false);
+/** Políticas globales de software (listas BL/WL). */
+export function NocGlobalPolicies({ defaultOpen = false }: { defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
 
   return (
     <section className="noc-collapse" style={{ marginTop: "1.25rem" }}>

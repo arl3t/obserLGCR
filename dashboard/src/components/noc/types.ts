@@ -17,9 +17,22 @@ export interface NocAlert {
   id: string;
   device_id: string;
   hostname: string;
+  ip_address?: string | null;
   alert_type: string;
   status: string;
   triggered_at: string;
   resolved_at?: string | null;
+  ack_by?: string | null;
+  ack_at?: string | null;
   details: Record<string, unknown>;
+}
+
+export type NocHubView = "wallboard" | "activos" | "alerts" | "sites";
+
+export interface NocSiteSummary {
+  site: string;
+  total: number;
+  online: number;
+  offline: number;
+  alerting: number;
 }

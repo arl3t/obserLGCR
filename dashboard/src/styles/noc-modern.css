@@ -89,6 +89,16 @@
   background: #ffb300;
 }
 
+.noc-status--static .noc-status__dot,
+.noc-status--static.noc-status--online .noc-status__dot,
+.noc-status--static.noc-status--offline {
+  animation: none !important;
+}
+
+.noc-status--static .noc-status__dot {
+  animation: none !important;
+}
+
 /* Fila de tabla con alerta activa */
 .noc-row--alerting {
   animation: noc-alert-glow 2.5s ease-in-out infinite;
@@ -178,4 +188,255 @@
   .noc-metric--critical {
     animation: none !important;
   }
+}
+
+/* Hub NOC — navegación wallboard / flota / alertas / sitios */
+.noc-hub-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--ut-border-subtle);
+}
+
+.noc-hub-nav__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.noc-hub-nav__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.85rem;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ut-text-secondary);
+  background: var(--ut-bg-elevated);
+  border: 1px solid var(--ut-border-subtle);
+  border-radius: var(--ut-radius);
+  cursor: pointer;
+}
+
+.noc-hub-nav__tab--active {
+  color: var(--ut-accent);
+  border-color: color-mix(in srgb, var(--ut-accent) 45%, var(--ut-border));
+  background: color-mix(in srgb, var(--ut-accent) 10%, var(--ut-bg-card));
+}
+
+.noc-hub-nav__badge {
+  min-width: 1.1rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-align: center;
+  color: #fff;
+  background: #f87171;
+}
+
+.noc-hub-nav__config {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+  color: var(--ut-text-secondary);
+  text-decoration: none;
+}
+
+.noc-hub-nav__config:hover {
+  color: var(--ut-accent);
+}
+
+/* Wallboard */
+.noc-wallboard__kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.noc-wallboard__kpis .ut-card {
+  min-width: 8rem;
+  flex: 1;
+}
+
+.noc-wallboard__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.noc-wallboard__alert-list,
+.noc-wallboard__sites {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.noc-wallboard__alert-item,
+.noc-wallboard__site-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--ut-border-subtle);
+}
+
+.noc-wallboard__events {
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+/* Flota — filtros y chips */
+.noc-fleet-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.noc-fleet-alert-chip {
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #fff;
+  background: #f87171;
+}
+
+.noc-alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+/* Sitios */
+.noc-sites__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 1rem;
+}
+
+.noc-sites__card {
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  font-family: inherit;
+}
+
+.noc-sites__card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.noc-sites__stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+.noc-sites__device-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.noc-sites__device-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--ut-border-subtle);
+  border-radius: var(--ut-radius);
+  text-decoration: none;
+  color: inherit;
+}
+
+.noc-sites__device-card:hover {
+  border-color: var(--ut-accent);
+  background: color-mix(in srgb, var(--ut-accent) 6%, transparent);
+}
+
+/* Métricas dispositivo */
+.noc-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.noc-thresholds-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+}
+
+.noc-thresholds-form__full {
+  grid-column: 1 / -1;
+}
+
+.noc-thresholds-form__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.noc-identity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0;
+}
+
+.noc-identity-grid dt {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ut-text-secondary);
+}
+
+.noc-identity-grid dd {
+  margin: 0.15rem 0 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.ut-map__dot--down {
+  background: #f87171 !important;
+}
+
+.ut-map__dot--warn {
+  background: #ffb300 !important;
+}
+
+/* Punto de sitio estático (sin pulso verde del mapa) */
+.noc-site-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--ut-success, #4ade80);
+}
+
+.noc-site-dot--warn {
+  background: var(--ut-warning, #ffb300);
+}
+
+.noc-site-dot--down {
+  background: var(--ut-danger, #f87171);
+}
+
+.noc-site-dot--ok {
+  background: var(--ut-success, #4ade80);
 }

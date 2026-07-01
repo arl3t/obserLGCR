@@ -81,6 +81,71 @@ export function buildUptimeBars(
   return bars;
 }
 
+/** Uptime 24h desde historial de alertas `down` (preferido cuando hay datos). */
+export function buildUptimeBarsFromAlerts(
+  alerts: NocAlertLike[],
+  lastSeenAt: string | null,
+  segments = 48,
+): BarSegment[] {
+  const downAlerts = alerts.filter((a) => a.alert_type === "down");
+  if (downAlerts.length === 0 && !lastSeenAt) {
+    return Array(segments).fill("unknown");
+  }
+
+  const now = Date.now();
+  const windowMs = 24 * 3600 * 1000;
+  const msPerSeg = windowMs / segments;
+  const bars: BarSegment[] = [];
+
+  for (let i = 0; i < segments; i++) {
+    const segStart = now - windowMs + i * msPerSeg;
+    const segEnd = segStart + msPerSeg;
+    const inDown = downAlerts.some((a) => {
+      const start = new Date(a.triggered_at).getTime();
+      const end =
+        a.resolved_at != null
+          ? new Date(a.resolved_at).getTime()
+          : a.status === "open" || a.status === "ack"
+            ? now
+            : start;
+      return start < segEnd && end > segStart;
+    });
+    bars.push(inDown ? "down" : "up");
+  }
+  return bars;
+}
+
+export function computeFleetSla(devices: { status: string }[]): number {
+  if (devices.length === 0) return 100;
+  const online = devices.filter((d) => d.status === "online").length;
+  return Math.round((online / devices.length) * 1000) / 10;
+}
+
+export function groupDevicesBySite(
+  devices: { site: string | null; status: string; open_alerts?: number }[],
+): { site: string; total: number; online: number; offline: number; alerting: number }[] {
+  const map = new Map<string, { total: number; online: number; offline: number; alerting: number }>();
+  for (const d of devices) {
+    const site = (d.site?.trim() || "Sin sitio");
+    const cur = map.get(site) ?? { total: 0, online: 0, offline: 0, alerting: 0 };
+    cur.total += 1;
+    if (d.status === "online") cur.online += 1;
+    if (d.status === "offline") cur.offline += 1;
+    if ((d.open_alerts ?? 0) > 0 || d.status === "offline") cur.alerting += 1;
+    map.set(site, cur);
+  }
+  return [...map.entries()]
+    .map(([site, stats]) => ({ site, ...stats }))
+    .sort((a, b) => b.alerting - a.alerting || a.site.localeCompare(b.site));
+}
+
+export function alertSeverityRank(type: string): number {
+  if (type === "down") return 0;
+  if (type === "high_cpu" || type === "high_mem") return 1;
+  if (type === "high_rtt") return 2;
+  return 3;
+}
+
 export function uptimePercentFromBars(bars: BarSegment[]): number {
   if (bars.length === 0) return 100;
   const up = bars.filter((b) => b === "up").length;
