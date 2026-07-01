@@ -33,6 +33,7 @@ export function DiscoveryKpiCharts({ stats, loading }: Props) {
   const serviceData = stats.by_service.slice(0, 8).map((s) => ({ name: s.service || "?", count: s.count }));
   const portData = stats.by_port.slice(0, 8).map((p) => ({ name: String(p.port), count: p.count }));
   const osData = stats.by_os.slice(0, 6).map((o) => ({ name: (o.os || "Unknown").slice(0, 24), value: o.count }));
+  const cveData = (stats.by_cve ?? []).slice(0, 8).map((c) => ({ name: c.cve_id, count: c.count }));
 
   return (
     <div className="space-y-4">
@@ -41,6 +42,8 @@ export function DiscoveryKpiCharts({ stats, loading }: Props) {
           { label: "Hosts activos", value: stats.hosts_up },
           { label: "Hosts totales", value: stats.hosts_total },
           { label: "Puertos abiertos", value: stats.ports_open },
+          { label: "CVE detectados", value: stats.cves_total ?? 0 },
+          { label: "Hosts con CVE", value: stats.hosts_with_cves ?? 0 },
           { label: "Documentados", value: stats.documented },
         ].map((k) => (
           <div key={k.label} className="discovery-kpi">
@@ -76,6 +79,21 @@ export function DiscoveryKpiCharts({ stats, loading }: Props) {
             </BarChart>
           </ResponsiveContainer>
         </div>
+
+        {cveData.length > 0 && (
+          <div className="obser-panel p-3 lg:col-span-2">
+            <p className="mb-2 text-[11px] font-medium text-muted-foreground">CVE más frecuentes</p>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={cveData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                <XAxis dataKey="name" tick={{ fontSize: 9 }} stroke="#888" interval={0} angle={-25} textAnchor="end" height={60} />
+                <YAxis tick={{ fontSize: 10 }} stroke="#888" />
+                <Tooltip contentStyle={{ background: "#111", border: "1px solid #333", fontSize: 11 }} />
+                <Bar dataKey="count" fill="#f87171" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
 
         {osData.length > 0 && (
           <div className="obser-panel p-3 lg:col-span-2">

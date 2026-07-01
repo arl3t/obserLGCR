@@ -1,6 +1,6 @@
 import { api } from "./client";
 
-export type ScanProfile = "discovery" | "quick" | "standard" | "full" | "stealth" | "custom";
+export type ScanProfile = "discovery" | "quick" | "standard" | "full" | "stealth" | "vulnerabilities" | "custom";
 export type RunStatus = "pending" | "running" | "completed" | "failed";
 
 export interface DiscoveryProfile {
@@ -24,6 +24,7 @@ export interface DiscoveryJob {
   schedule_cron: string | null;
   schedule_enabled: boolean;
   auto_sync_ipam: boolean;
+  scan_cves: boolean;
   ipam_subnet_id: number | null;
   last_run_at: string | null;
   last_run_id: number | null;
@@ -41,6 +42,7 @@ export interface DiscoveryJobCreate {
   schedule_cron?: string;
   schedule_enabled?: boolean;
   auto_sync_ipam?: boolean;
+  scan_cves?: boolean;
   ipam_subnet_id?: number;
 }
 
@@ -58,6 +60,7 @@ export interface DiscoveryRun {
   hosts_up: number;
   hosts_total: number;
   ports_open: number;
+  scan_cves?: boolean;
   nmap_summary: string | null;
   error_message: string | null;
   triggered_by: string | null;
@@ -75,6 +78,18 @@ export interface DiscoveryPort {
   extra_info: string | null;
 }
 
+export interface DiscoveryVulnerability {
+  id: number;
+  cve_id: string;
+  severity: string | null;
+  cvss_score: number | null;
+  title: string | null;
+  port: number | null;
+  protocol: string | null;
+  script_id: string | null;
+  details: string | null;
+}
+
 export interface DiscoveryHost {
   id: number;
   run_id: number;
@@ -89,6 +104,8 @@ export interface DiscoveryHost {
   documented_by: string | null;
   tags: string[] | null;
   ports: DiscoveryPort[];
+  vulnerabilities?: DiscoveryVulnerability[];
+  cve_count?: number;
 }
 
 export interface DiscoveryHostPage {
@@ -104,6 +121,9 @@ export interface DiscoveryStats {
   hosts_total: number;
   ports_open: number;
   documented: number;
+  cves_total?: number;
+  hosts_with_cves?: number;
+  by_cve?: { cve_id: string; count: number }[];
   by_service: { service: string; count: number }[];
   by_port: { port: number; count: number }[];
   by_os: { os: string; count: number }[];
@@ -121,20 +141,65 @@ export interface DiscoveryTopologyNode {
   subnet: string;
   x: number | null;
   y: number | null;
+  node_type: "host" | "gateway" | "subnet";
+  gateway_inferred: boolean | null;
+  host_id: number | null;
+  mac_address: string | null;
+  os_guess: string | null;
+  open_ports: number[];
+  has_critical_ports: boolean;
+  noc_device_id: string | null;
+  noc_status: string | null;
+  noc_open_alerts: number;
+  delta: "new" | "removed" | "unchanged" | null;
+  region_name: string | null;
+}
+
+export interface DiscoveryTopologyEdge {
+  source: string;
+  target: string;
+  label: string;
+  edge_type: "gateway" | "inferred_gateway" | "same_mac";
+}
+
+export interface DiscoveryTopologyCluster {
+  id: string;
+  subnet: string;
+  label: string;
+  host_count: number;
+  documented: number;
+  ports_open: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface DiscoveryTopology {
   run_id: number;
+  compare_run_id: number | null;
+  mode: "detail" | "summary" | "auto";
   nodes: DiscoveryTopologyNode[];
-  edges: { source: string; target: string; label: string }[];
+  edges: DiscoveryTopologyEdge[];
   subnets: string[];
+  clusters: DiscoveryTopologyCluster[];
+  meta: {
+    total_hosts?: number;
+    shown_hosts?: number;
+    ipam_cidr?: string | null;
+    region_name?: string | null;
+    critical_ports?: number[];
+  };
 }
+
+export type TopologyMode = "auto" | "detail" | "summary";
 
 export interface AdHocRunRequest {
   name?: string;
   targets: string;
   scan_profile?: ScanProfile;
   custom_args?: string;
+  scan_cves?: boolean;
   auto_sync_ipam?: boolean;
   ipam_subnet_id?: number;
 }
@@ -202,13 +267,30 @@ export async function updateDiscoveryHost(id: number, body: { notes?: string; do
   return data;
 }
 
+export async function fetchDiscoveryVulnerabilities(runId: number, offset = 0, limit = 500) {
+  const { data } = await api.get<{ total: number; limit: number; offset: number; data: DiscoveryVulnerability[] }>(
+    `/api/v1/ipam/discovery/runs/${runId}/vulnerabilities`,
+    { params: { offset, limit } },
+  );
+  return data;
+}
+
 export async function fetchDiscoveryStats(runId: number) {
   const { data } = await api.get<DiscoveryStats>(`/api/v1/ipam/discovery/runs/${runId}/stats`);
   return data;
 }
 
-export async function fetchDiscoveryTopology(runId: number) {
-  const { data } = await api.get<DiscoveryTopology>(`/api/v1/ipam/discovery/runs/${runId}/topology`);
+export async function fetchDiscoveryTopology(
+  runId: number,
+  params?: { mode?: TopologyMode; compare?: boolean; compare_run_id?: number | null },
+) {
+  const { data } = await api.get<DiscoveryTopology>(`/api/v1/ipam/discovery/runs/${runId}/topology`, {
+    params: {
+      mode: params?.mode ?? "auto",
+      compare: params?.compare ?? true,
+      ...(params?.compare_run_id != null ? { compare_run_id: params.compare_run_id } : {}),
+    },
+  });
   return data;
 }
 

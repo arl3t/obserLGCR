@@ -68,6 +68,147 @@
   border: 1px solid rgb(255 255 255 / 0.08);
   border-radius: 0.75rem;
   background: radial-gradient(circle at 50% 30%, rgb(56 189 248 / 0.06), transparent 55%);
+  touch-action: none;
+  user-select: none;
+}
+
+.discovery-map-shell--fs {
+  background: #0a0f14;
+  padding: 1rem;
+}
+
+.discovery-map-layout {
+  display: grid;
+  grid-template-columns: 1fr 180px;
+  gap: 0.75rem;
+}
+
+@media (max-width: 1024px) {
+  .discovery-map-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.discovery-map-canvas-wrap {
+  position: relative;
+  min-height: 420px;
+}
+
+.discovery-map-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.discovery-map-select {
+  border-radius: 0.5rem;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background: rgb(0 0 0 / 0.25);
+  padding: 0.25rem 0.5rem;
+  font-size: 11px;
+  color: rgb(255 255 255 / 0.8);
+}
+
+.discovery-map-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 11px;
+  color: rgb(255 255 255 / 0.65);
+}
+
+.discovery-map-legend {
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 0.65rem;
+  padding: 0.65rem;
+  background: rgb(255 255 255 / 0.02);
+  font-size: 10px;
+}
+
+.discovery-map-legend__list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.discovery-map-legend__list li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.discovery-map-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.discovery-map-swatch--dashed {
+  border: 1px dashed rgb(167 139 250 / 0.6);
+  background: transparent;
+}
+
+.discovery-map-panel {
+  grid-column: 1 / -1;
+  border: 1px solid rgb(56 189 248 / 0.25);
+  border-radius: 0.65rem;
+  padding: 0.75rem;
+  background: rgb(56 189 248 / 0.05);
+}
+
+.discovery-map-panel__dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.75rem;
+  margin-top: 0.5rem;
+  font-size: 11px;
+}
+
+.discovery-map-panel__dl dt {
+  color: rgb(255 255 255 / 0.45);
+}
+
+.discovery-map-panel__dl dd {
+  margin: 0;
+}
+
+.discovery-map-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 0.4rem;
+  border: 1px solid rgb(56 189 248 / 0.3);
+  padding: 0.2rem 0.45rem;
+  font-size: 10px;
+  color: rgb(103 232 249);
+  text-decoration: none;
+}
+
+.discovery-map-minimap {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  width: 120px;
+  height: 72px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 0.35rem;
+  background: rgb(0 0 0 / 0.45);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.discovery-map-minimap svg {
+  width: 100%;
+  height: 100%;
+}
+
+.discovery-map-node:focus-visible {
+  outline: 2px solid rgb(103 232 249);
+  outline-offset: 2px;
 }
 
 .discovery-roadmap-item {

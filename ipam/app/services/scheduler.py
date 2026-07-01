@@ -52,12 +52,14 @@ def _run_discovery_job(job_id: int) -> None:
             triggered_by="scheduler",
             job_id=job.id,
             name=job.name,
+            scan_cves=job.scan_cves,
         )
         discovery_svc.execute_run(
             run.id,
             custom_args=job.custom_args,
             auto_sync_ipam=job.auto_sync_ipam,
             ipam_subnet_id=job.ipam_subnet_id,
+            scan_cves=job.scan_cves,
         )
         logger.info("cron_discovery_done job=%s run=%s", job_id, run.id)
     except Exception:

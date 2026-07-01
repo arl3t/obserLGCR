@@ -26,6 +26,7 @@ export function DiscoveryHostGrid({ hosts, loading, selectedId, onSelect }: Prop
     <div className="discovery-host-grid">
       {hosts.map((h) => {
         const openPorts = h.ports.filter((p) => p.state === "open").length;
+        const cveCount = h.cve_count ?? h.vulnerabilities?.length ?? 0;
         return (
           <button
             key={h.id}
@@ -44,6 +45,9 @@ export function DiscoveryHostGrid({ hosts, loading, selectedId, onSelect }: Prop
               <span className="rounded bg-emerald-500/15 px-1 text-emerald-400">{h.status}</span>
               {openPorts > 0 && (
                 <span className="rounded bg-violet-500/15 px-1 text-violet-300">{openPorts} puertos</span>
+              )}
+              {cveCount > 0 && (
+                <span className="rounded bg-red-500/15 px-1 text-red-300">{cveCount} CVE</span>
               )}
               {h.documented && <span className="rounded bg-cyan-500/15 px-1 text-cyan-300">doc</span>}
             </div>

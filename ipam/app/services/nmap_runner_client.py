@@ -94,6 +94,7 @@ def run_nmap_scan_via_runner(
     targets: str,
     profile: str = "discovery",
     custom_args: list[str] | None = None,
+    scan_cves: bool = False,
 ) -> dict:
     """Escaneo nmap completo vía host runner (perfiles discovery/quick/standard/full)."""
     url = (settings.nmap_runner_url or "").strip()
@@ -108,6 +109,7 @@ def run_nmap_scan_via_runner(
         "profile": profile,
         "host_timeout_sec": settings.nmap_host_timeout_sec,
         "timeout_sec": settings.nmap_timeout_sec,
+        "scan_cves": scan_cves,
     }
     if custom_args:
         body["custom_args"] = custom_args

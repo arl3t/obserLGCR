@@ -17,12 +17,28 @@ from app.schemas.discovery import (
     DiscoveryRunResponse,
     DiscoveryStatsResponse,
     DiscoveryTopologyResponse,
+    DiscoveryVulnerabilityPage,
+    DiscoveryVulnerabilityResponse,
 )
 from app.services import discovery_service as svc
 from app.services.nmap_scan_engine import PROFILE_LABELS, is_scan_available, validate_targets
 from app.services.scheduler import refresh_discovery_jobs
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
+
+
+def _vuln_response(v) -> DiscoveryVulnerabilityResponse:
+    return DiscoveryVulnerabilityResponse(
+        id=v.id,
+        cve_id=v.cve_id,
+        severity=v.severity,
+        cvss_score=float(v.cvss_score) if v.cvss_score is not None else None,
+        title=v.title,
+        port=v.port,
+        protocol=v.protocol,
+        script_id=v.script_id,
+        details=v.details,
+    )
 
 
 def _host_response(h: NetworkDiscoveryHost) -> DiscoveryHostResponse:
@@ -52,6 +68,8 @@ def _host_response(h: NetworkDiscoveryHost) -> DiscoveryHostResponse:
             )
             for p in h.ports
         ],
+        vulnerabilities=[_vuln_response(v) for v in (h.vulnerabilities or [])],
+        cve_count=len(h.vulnerabilities or []),
     )
 
 
@@ -145,12 +163,14 @@ def run_job(
         triggered_by=user.email,
         job_id=job.id,
         name=job.name,
+        scan_cves=job.scan_cves,
     )
     svc.enqueue_run(
         run.id,
         custom_args=job.custom_args,
         auto_sync_ipam=job.auto_sync_ipam,
         ipam_subnet_id=job.ipam_subnet_id,
+        scan_cves=job.scan_cves,
     )
     return run
 
@@ -173,12 +193,14 @@ def run_ad_hoc(
         scan_profile=payload.scan_profile,
         triggered_by=user.email,
         name=payload.name or f"Ad-hoc {payload.scan_profile}",
+        scan_cves=payload.scan_cves,
     )
     svc.enqueue_run(
         run.id,
         custom_args=payload.custom_args,
         auto_sync_ipam=payload.auto_sync_ipam,
         ipam_subnet_id=payload.ipam_subnet_id,
+        scan_cves=payload.scan_cves,
     )
     return run
 
@@ -225,7 +247,10 @@ def patch_host(
 ):
     host = (
         db.query(NetworkDiscoveryHost)
-        .options(joinedload(NetworkDiscoveryHost.ports))
+        .options(
+            joinedload(NetworkDiscoveryHost.ports),
+            joinedload(NetworkDiscoveryHost.vulnerabilities),
+        )
         .filter(NetworkDiscoveryHost.id == host_id)
         .first()
     )
@@ -234,6 +259,25 @@ def patch_host(
     host = svc.update_host(db, host, payload.model_dump(exclude_unset=True), user.email)
     db.refresh(host)
     return _host_response(host)
+
+
+@router.get("/runs/{run_id}/vulnerabilities", response_model=DiscoveryVulnerabilityPage)
+def get_run_vulnerabilities(
+    run_id: int,
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    _user: CurrentUser = Depends(get_current_user),
+):
+    if not svc.get_run(db, run_id):
+        raise HTTPException(status_code=404, detail="Run no encontrado")
+    rows, total = svc.list_vulnerabilities(db, run_id, limit=limit, offset=offset)
+    return DiscoveryVulnerabilityPage(
+        total=total,
+        limit=limit,
+        offset=offset,
+        data=[_vuln_response(v) for v in rows],
+    )
 
 
 @router.get("/runs/{run_id}/stats", response_model=DiscoveryStatsResponse)
@@ -245,10 +289,26 @@ def get_run_stats(run_id: int, db: Session = Depends(get_db), _user: CurrentUser
 
 
 @router.get("/runs/{run_id}/topology", response_model=DiscoveryTopologyResponse)
-def get_run_topology(run_id: int, db: Session = Depends(get_db), _user: CurrentUser = Depends(get_current_user)):
+def get_run_topology(
+    run_id: int,
+    mode: str = Query("auto", pattern="^(auto|detail|summary)$"),
+    compare: bool = Query(True),
+    compare_run_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: CurrentUser = Depends(get_current_user),
+):
     if not svc.get_run(db, run_id):
         raise HTTPException(status_code=404, detail="Run no encontrado")
-    return svc.build_topology(db, run_id)
+    try:
+        return svc.build_topology(
+            db,
+            run_id,
+            mode=mode,
+            compare=compare,
+            compare_run_id=compare_run_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/runs/{run_id}/export")

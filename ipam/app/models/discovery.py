@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     func,
@@ -31,6 +32,7 @@ class NetworkDiscoveryJob(Base):
     schedule_cron: Mapped[str | None] = mapped_column(String(64))
     schedule_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     auto_sync_ipam: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    scan_cves: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     ipam_subnet_id: Mapped[int | None] = mapped_column(ForeignKey("ipam_subnets.id", ondelete="SET NULL"))
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_run_id: Mapped[int | None] = mapped_column(BigInteger)
@@ -57,6 +59,7 @@ class NetworkDiscoveryRun(Base):
     hosts_up: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     hosts_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     ports_open: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    scan_cves: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     nmap_summary: Mapped[str | None] = mapped_column(Text)
     raw_xml: Mapped[str | None] = mapped_column(Text)
     stats_json: Mapped[dict | None] = mapped_column(JSONB)
@@ -86,6 +89,10 @@ class NetworkDiscoveryHost(Base):
 
     run: Mapped[NetworkDiscoveryRun] = relationship(back_populates="hosts")
     ports: Mapped[list["NetworkDiscoveryPort"]] = relationship(back_populates="host", cascade="all, delete-orphan")
+    vulnerabilities: Mapped[list["NetworkDiscoveryVulnerability"]] = relationship(
+        back_populates="host",
+        cascade="all, delete-orphan",
+    )
 
 
 class NetworkDiscoveryPort(Base):
@@ -102,3 +109,24 @@ class NetworkDiscoveryPort(Base):
     extra_info: Mapped[str | None] = mapped_column(Text)
 
     host: Mapped[NetworkDiscoveryHost] = relationship(back_populates="ports")
+
+
+class NetworkDiscoveryVulnerability(Base):
+    __tablename__ = "network_discovery_vulnerabilities"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    host_id: Mapped[int] = mapped_column(
+        ForeignKey("network_discovery_hosts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    cve_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    severity: Mapped[str | None] = mapped_column(String(16))
+    cvss_score: Mapped[float | None] = mapped_column(Numeric(4, 1))
+    title: Mapped[str | None] = mapped_column(Text)
+    port: Mapped[int | None] = mapped_column(Integer)
+    protocol: Mapped[str | None] = mapped_column(String(8))
+    script_id: Mapped[str | None] = mapped_column(String(128))
+    details: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    host: Mapped[NetworkDiscoveryHost] = relationship(back_populates="vulnerabilities")

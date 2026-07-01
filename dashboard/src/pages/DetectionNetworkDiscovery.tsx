@@ -40,6 +40,7 @@ import { DiscoveryHostGrid } from "@/components/discovery/DiscoveryHostGrid";
 import { DiscoveryKpiCharts } from "@/components/discovery/DiscoveryKpiCharts";
 import { DiscoveryNetworkMap } from "@/components/discovery/DiscoveryNetworkMap";
 import { DiscoveryRoadmap } from "@/components/discovery/DiscoveryRoadmap";
+import { DiscoveryVulnTable } from "@/components/discovery/DiscoveryVulnTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -84,6 +85,8 @@ export function DetectionNetworkDiscoveryPage() {
   const [subTab, setSubTab] = useState<SubTab>("dashboard");
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [selectedHost, setSelectedHost] = useState<DiscoveryHost | null>(null);
+  const [mapMode, setMapMode] = useState<"auto" | "detail" | "summary">("auto");
+  const [mapCompare, setMapCompare] = useState(true);
   const [docNotes, setDocNotes] = useState("");
   const [showJobForm, setShowJobForm] = useState(false);
 
@@ -92,6 +95,7 @@ export function DetectionNetworkDiscoveryPage() {
     profile: "discovery" as ScanProfile,
     custom_args: "",
     name: "",
+    scan_cves: false,
   });
 
   const [jobForm, setJobForm] = useState({
@@ -102,6 +106,7 @@ export function DetectionNetworkDiscoveryPage() {
     schedule_cron: "0 2 * * *",
     schedule_enabled: false,
     auto_sync_ipam: false,
+    scan_cves: false,
     ipam_subnet_id: "",
   });
 
@@ -136,9 +141,13 @@ export function DetectionNetworkDiscoveryPage() {
   });
 
   const topoQ = useQuery({
-    queryKey: ["discovery", "topology", selectedRunId],
-    queryFn: () => fetchDiscoveryTopology(selectedRunId!),
-    enabled: selectedRunId != null && runQ.data?.status === "completed" && subTab === "map",
+    queryKey: ["discovery", "topology", selectedRunId, mapMode, mapCompare],
+    queryFn: () =>
+      fetchDiscoveryTopology(selectedRunId!, {
+        mode: mapMode,
+        compare: mapCompare,
+      }),
+    enabled: selectedRunId != null && runQ.data?.status === "completed",
   });
 
   useEffect(() => {
@@ -161,6 +170,7 @@ export function DetectionNetworkDiscoveryPage() {
         targets: adhoc.targets.trim(),
         scan_profile: adhoc.profile,
         custom_args: adhoc.custom_args.trim() || undefined,
+        scan_cves: adhoc.scan_cves || adhoc.profile === "vulnerabilities",
       }),
     onSuccess: (r) => {
       toast.success(`Escaneo #${r.id} iniciado`);
@@ -180,6 +190,7 @@ export function DetectionNetworkDiscoveryPage() {
         schedule_cron: jobForm.schedule_cron.trim() || undefined,
         schedule_enabled: jobForm.schedule_enabled,
         auto_sync_ipam: jobForm.auto_sync_ipam,
+        scan_cves: jobForm.scan_cves || jobForm.scan_profile === "vulnerabilities",
         ipam_subnet_id: jobForm.ipam_subnet_id ? Number(jobForm.ipam_subnet_id) : undefined,
       }),
     onSuccess: () => {
@@ -229,6 +240,14 @@ export function DetectionNetworkDiscoveryPage() {
   const latestCompleted = useMemo(
     () => (runsQ.data ?? []).find((r) => r.status === "completed"),
     [runsQ.data],
+  );
+
+  const vulnRows = useMemo(
+    () =>
+      (hostsQ.data?.data ?? []).flatMap((h) =>
+        (h.vulnerabilities ?? []).map((v) => ({ ...v, host_ip: h.ip_address })),
+      ),
+    [hostsQ.data],
   );
 
   const exportMut = useMutation({
@@ -328,6 +347,20 @@ export function DetectionNetworkDiscoveryPage() {
                 <Input value={adhoc.custom_args} onChange={(e) => setAdhoc((f) => ({ ...f, custom_args: e.target.value }))} placeholder="-T4 -sV -p 80,443" className="h-8 text-[12px]" />
               </div>
             )}
+            <div className="sm:col-span-2 lg:col-span-4">
+              <label className="flex items-center gap-2 text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={adhoc.scan_cves || adhoc.profile === "vulnerabilities"}
+                  disabled={adhoc.profile === "vulnerabilities"}
+                  onChange={(e) => setAdhoc((f) => ({ ...f, scan_cves: e.target.checked }))}
+                />
+                Detectar CVEs (nmap --script vuln)
+              </label>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Con «descubrimiento» usa el perfil CVE automáticamente. Requiere scripts NSE de nmap instalados.
+              </p>
+            </div>
           </form>
 
           <DiscoveryKpiCharts stats={statsQ.data} loading={statsQ.isLoading && selectedRunId != null} />
@@ -335,6 +368,7 @@ export function DetectionNetworkDiscoveryPage() {
           {latestCompleted && (
             <p className="text-[11px] text-muted-foreground">
               Último completado: #{latestCompleted.id} · {latestCompleted.targets} · {latestCompleted.hosts_up} hosts · {latestCompleted.ports_open} puertos
+              {(statsQ.data?.cves_total ?? 0) > 0 && ` · ${statsQ.data?.cves_total} CVE`}
             </p>
           )}
         </div>
@@ -369,6 +403,15 @@ export function DetectionNetworkDiscoveryPage() {
                 <label className="flex items-center gap-2 text-[11px]">
                   <input type="checkbox" checked={jobForm.schedule_enabled} onChange={(e) => setJobForm((f) => ({ ...f, schedule_enabled: e.target.checked }))} />
                   Programar cron
+                </label>
+                <label className="flex items-center gap-2 text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={jobForm.scan_cves || jobForm.scan_profile === "vulnerabilities"}
+                    disabled={jobForm.scan_profile === "vulnerabilities"}
+                    onChange={(e) => setJobForm((f) => ({ ...f, scan_cves: e.target.checked }))}
+                  />
+                  Detectar CVEs (--script vuln)
                 </label>
                 <label className="flex items-center gap-2 text-[11px]">
                   <input type="checkbox" checked={jobForm.auto_sync_ipam} onChange={(e) => setJobForm((f) => ({ ...f, auto_sync_ipam: e.target.checked }))} />
@@ -468,18 +511,35 @@ export function DetectionNetworkDiscoveryPage() {
           ) : runQ.data?.status === "failed" ? (
             <p className="text-sm text-red-400">{runQ.data.error_message ?? "Escaneo fallido"}</p>
           ) : (
-            <DiscoveryHostGrid
-              hosts={hostsQ.data?.data ?? []}
-              loading={hostsQ.isLoading}
-              selectedId={selectedHost?.id ?? null}
-              onSelect={setSelectedHost}
-            />
+            <div className="grid gap-4 lg:grid-cols-2">
+              <DiscoveryHostGrid
+                hosts={hostsQ.data?.data ?? []}
+                loading={hostsQ.isLoading}
+                selectedId={selectedHost?.id ?? null}
+                onSelect={setSelectedHost}
+              />
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium">CVE detectados</h3>
+                <DiscoveryVulnTable
+                  rows={vulnRows}
+                  loading={hostsQ.isLoading}
+                  selectedHost={selectedHost}
+                />
+              </div>
+            </div>
           )}
         </div>
       )}
 
       {subTab === "map" && (
-        <DiscoveryNetworkMap topology={topoQ.data} loading={topoQ.isLoading} />
+        <DiscoveryNetworkMap
+          topology={topoQ.data}
+          loading={topoQ.isLoading}
+          mode={mapMode}
+          onModeChange={setMapMode}
+          compareEnabled={mapCompare}
+          onCompareChange={setMapCompare}
+        />
       )}
 
       {subTab === "docs" && (

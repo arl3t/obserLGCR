@@ -51,7 +51,10 @@ SCAN_PROFILES: dict[str, list[str]] = {
     "standard": ["-T4", "-sV", "-sC", "--version-light"],
     "full": ["-T4", "-sV", "-sC", "-p-"],
     "stealth": ["-T2", "-sS", "-F"],
+    "vulnerabilities": ["-T4", "-sV", "--version-light", "--script", "vuln", "--script-timeout", "120s"],
 }
+
+VULN_SCRIPT_ARGS = ["--script", "vuln", "--script-timeout", "120s"]
 
 
 def validate_targets(raw: str) -> list[str]:
@@ -93,15 +96,24 @@ def run_nmap_scan(
     timeout_sec: int,
     profile: str = "discovery",
     custom_args: list[str] | None = None,
+    scan_cves: bool = False,
 ) -> dict[str, Any]:
     nmap_bin = shutil.which("nmap")
     if not nmap_bin:
         return {"error": "nmap no instalado en el host. Instale: brew install nmap"}
 
-    if profile == "custom" and custom_args:
-        profile_args = custom_args
+    effective = profile
+    if scan_cves and profile == "discovery":
+        effective = "vulnerabilities"
+
+    if effective == "custom" and custom_args:
+        profile_args = list(custom_args)
+        if scan_cves:
+            profile_args.extend(VULN_SCRIPT_ARGS)
     else:
-        profile_args = list(SCAN_PROFILES.get(profile, SCAN_PROFILES["discovery"]))
+        profile_args = list(SCAN_PROFILES.get(effective, SCAN_PROFILES["discovery"]))
+        if scan_cves and effective not in ("vulnerabilities", "discovery"):
+            profile_args.extend(VULN_SCRIPT_ARGS)
 
     cmd = [
         nmap_bin,
@@ -197,7 +209,15 @@ class Handler(BaseHTTPRequestHandler):
 
         host_timeout = int(body.get("host_timeout_sec") or DEFAULT_HOST_TIMEOUT)
         timeout = int(body.get("timeout_sec") or DEFAULT_TIMEOUT)
-        result = run_nmap_scan(targets, host_timeout, timeout, profile=profile, custom_args=custom_args)
+        scan_cves = bool(body.get("scan_cves"))
+        result = run_nmap_scan(
+            targets,
+            host_timeout,
+            timeout,
+            profile=profile,
+            custom_args=custom_args,
+            scan_cves=scan_cves,
+        )
         status = 502 if result.get("error") else 200
         self._send_json(status, result)
 
