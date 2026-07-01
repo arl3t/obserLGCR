@@ -86,7 +86,7 @@ import {
   setSla,
   getSlaAudit,
 } from "../services/slaConfig.mjs";
-import { invalidateCasesKpisCache } from "./caseInvestigation.mjs";
+import { invalidateCasesKpisCache } from "../services/casesKpisCache.mjs";
 
 // Resolución JWT→CI vive en services/operatorResolver.mjs (compartida con
 // routes/outliers.mjs y cualquier handler nuevo que necesite la identidad

@@ -3,7 +3,6 @@ import { ProtectedRoute } from "@/auth/ProtectedRoute";
 import { AuthShell } from "@/layouts/AuthShell";
 import { DashboardLayout } from "@/layouts/DashboardLayout";
 import { DetectionCenterPage } from "@/pages/DetectionCenter";
-import { SocOperationsPage } from "@/pages/SocOperations";
 import { IncidentManagementPage } from "@/pages/IncidentManagement";
 import { PlatformSettingsPage } from "@/pages/PlatformSettingsPage";
 import { NocPage, NocDeviceDetailPage } from "@/pages/NocPage";
@@ -35,15 +34,12 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/noc" replace /> },
           { path: "detection", element: <DetectionCenterPage />, loader: () => null },
-          { path: "soc", element: <SocOperationsPage />, loader: () => null },
           { path: "gestion", element: <IncidentManagementPage />, loader: () => null },
           { path: "admin/settings", element: <PlatformSettingsPage />, loader: () => null },
           { path: "noc", element: <NocPage />, loader: () => null },
           { path: "noc/config", element: <NocConfigPage />, loader: () => null },
           { path: "noc/:id", element: <NocDeviceDetailPage />, loader: () => null },
           { path: "incident-management", element: <Navigate to="/gestion" replace /> },
-          { path: "enriched-score", element: <Navigate to="/soc?tab=score" replace /> },
-          { path: "incident-classification", element: <Navigate to="/detection?tab=clasificacion" replace /> },
         ],
       },
     ],

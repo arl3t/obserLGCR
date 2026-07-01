@@ -183,22 +183,12 @@ export function useCaseManagement(filters: CaseFilters): UseCaseManagementResult
     refetchOnWindowFocus: false,
   });
 
-  // ── Query de KPIs — PostgreSQL fast path via /api/cases/kpis ─────────────
-  // Refetch adaptativo (2026-05-20): si hay CRITICAL sin adoptar, polling
-  // cada 60s para reflejar contadores más rápido en el panel; si no,
-  // 120s para no machacar PG. Mismo patrón que el query de cases.
+  // ── Query de KPIs — PostgreSQL vía /api/incidents/kpis ───────────────────
   const kpisQuery = useQuery({
     queryKey: [KPIS_KEY],
     queryFn: async () => {
-      // Primary: PG-backed fast endpoint (sub-ms, no Trino dependency)
-      try {
-        const { data } = await api.get<DashboardKpis>("/api/cases/kpis");
-        return data;
-      } catch {
-        // Fallback to Trino-backed endpoint
-        const { data } = await api.get<DashboardKpis>("/api/incidents/kpis");
-        return data;
-      }
+      const { data } = await api.get<DashboardKpis>("/api/incidents/kpis");
+      return data;
     },
     staleTime: 60_000,
     refetchInterval: (query) => {

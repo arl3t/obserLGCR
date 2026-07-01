@@ -9,7 +9,7 @@ const router = express.Router();
 // Resuelve el CI desde el JWT (resolveJwtOperatorCi) → el frontend deja de pedir
 // el CI por window.prompt en cada sesión. Devuelve null si el usuario no está
 // vinculado a un soc_operators (el front cae al flujo manual previo).
-// IMPORTANTE: declarado ANTES de "/:id/oes" para que /me no matchee como :id.
+// IMPORTANTE: rutas estáticas ANTES de "/:id/oes" para que no matcheen como :id.
 router.get("/me", async (req, res) => {
   try {
     const ci = await resolveJwtOperatorCi(req);
@@ -25,6 +25,49 @@ router.get("/me", async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+const OPERATOR_SELECT = `
+  SELECT o.id, o.name, o.email, o.role_id, r.name AS role_name,
+         o.is_active, o.is_shift_manager, o.shift,
+         o.cases_adopted, o.cases_closed, o.fp_count,
+         o.avg_mtta_min, o.avg_mttr_min, o.last_active_at
+  FROM soc_operators o
+  JOIN soc_roles r ON r.id = o.role_id
+`;
+
+// GET /api/operators — operadores activos (asignación, modales, mapa CI→nombre)
+router.get("/", async (_req, res) => {
+  try {
+    const rows = await pgQuery(
+      `${OPERATOR_SELECT} WHERE o.is_active = true ORDER BY o.name`,
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/operators/roles — catálogo de roles SOC
+router.get("/roles", async (_req, res) => {
+  try {
+    const rows = await pgQuery(`SELECT * FROM soc_roles ORDER BY id`);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/operators/shift-manager/current — shift manager activo (bulk close, asignación)
+router.get("/shift-manager/current", async (_req, res) => {
+  try {
+    const [row] = await pgQuery(
+      `${OPERATOR_SELECT} WHERE o.is_shift_manager = true AND o.is_active = true LIMIT 1`,
+    );
+    res.json(row ?? null);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

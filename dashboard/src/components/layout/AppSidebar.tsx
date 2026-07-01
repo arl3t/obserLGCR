@@ -1,6 +1,5 @@
 import { motion } from "framer-motion";
 import {
-  ClipboardList,
   LogOut,
   Moon,
   PanelLeftClose,
@@ -40,7 +39,6 @@ type NavItem = {
 // obserLGCR (fork demo): navegación recortada a los módulos exportados.
 const navItems: NavItem[] = [
   { to: "/detection",         label: "Detección",             icon: ShieldAlert, end: true },
-  { to: "/soc",               label: "Score IOC",             icon: ClipboardList },
   { to: "/gestion",           label: "Gestión de incidentes", icon: ShieldCheck },
   { to: "/noc",               label: "NOC · Monitoreo",       icon: Radio, end: true },
 ];

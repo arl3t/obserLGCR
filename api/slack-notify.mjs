@@ -407,7 +407,7 @@ export function buildHighScoreIocBlock(opts) {
         elements: [
           {
             type: "mrkdwn",
-            text: `_LegacyHunt SOC · ${nowUtc()} · <${dashUrl()}/enriched-score|Ver /enriched-score>_`,
+            text: `_obserLGCR · ${nowUtc()} · <${dashUrl()}/gestion|Ver gestión de incidentes>_`,
           },
         ],
       },

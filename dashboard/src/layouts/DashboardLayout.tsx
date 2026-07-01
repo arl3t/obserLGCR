@@ -1,7 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Outlet, useLocation } from "react-router-dom";
 import { AppHeader } from "@/components/layout/AppHeader";
-import { IpInvestigationSheet } from "@/components/threat/IpInvestigationSheet";
 
 export function DashboardLayout() {
   const location = useLocation();
@@ -17,8 +16,6 @@ export function DashboardLayout() {
 
   return (
     <div className="obser-shell flex min-h-dvh w-full flex-col">
-      <IpInvestigationSheet />
-
       <AppHeader />
 
       <main

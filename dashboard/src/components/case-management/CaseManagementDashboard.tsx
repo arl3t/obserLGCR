@@ -22,14 +22,11 @@ import { useCaseManagement }       from "./useCaseManagement";
 import { CaseDetailSheet }         from "./CaseDetailSheet";
 import { CaseAdoptionModal }       from "./CaseAdoptionModal";
 import { ProfileSelector }         from "./ProfileSelector";
-import { ExecutiveReportMenu }     from "./ExecutiveReportMenu";
 import { BulkCloseAssistant }      from "./BulkCloseAssistant";
 import { exportSelectedCasesReportPdf } from "@/lib/cases-report-pdf";
-import { useStatusDist }           from "./useCaseInvestigation";
 import { getTriggeringProfiles, loadProfiles } from "./scoringProfiles";
 import type { SocCase, Severity, CaseStatus, DashboardKpis } from "./types";
-import { NotificationBell }        from "@/components/soc/NotificationBell";
-import { WorkflowStatusBar, LifecycleStageBadge } from "@/components/soc/WorkflowStatusBar";
+import { LifecycleStageBadge } from "./LifecycleStageBadge";
 import { useSocOperators, useShiftManager } from "@/hooks/useSocWorkflow";
 import { useCaseUpdates }          from "@/hooks/useCaseUpdates";
 import { useMyWorkload }           from "@/hooks/useMyWorkload";
@@ -675,15 +672,8 @@ export function CaseManagementDashboard() {
   const [bulkAssignTarget,  setBulkAssignTarget]  = useState<string>("");
   // Deep-link: ?case=<id> abre el panel lateral de detalle al montar.
   const [searchParams, setSearchParams] = useSearchParams();
-  // Deep-link desde /leader: ?openHandover=true → abrir el panel al montar.
+  // Deep-link desde /hunt (tab "Puertos atacados"): ?search=dport:NN
   useEffect(() => {
-    if (searchParams.get("openHandover") === "true") {
-      setShowHandover(true);
-      const next = new URLSearchParams(searchParams);
-      next.delete("openHandover");
-      setSearchParams(next, { replace: true });
-    }
-    // Deep-link desde /hunt (tab "Puertos atacados"): ?search=dport:NN
     // Setea el search input para que el DSL haga su parsing al blur/Enter.
     // El segundo param (_hint) es solo informativo, lo limpiamos también.
     const incomingSearch = searchParams.get("search");
@@ -743,14 +733,12 @@ export function CaseManagementDashboard() {
   const [showProfiles,      setShowProfiles]      = useState(false);
   const [showSuppressions,  setShowSuppressions]  = useState(false);
   const [showDuplicates,    setShowDuplicates]    = useState(false);
-  const [showHandover,      setShowHandover]      = useState(false);
   const [showBulkClose,     setShowBulkClose]     = useState(false);
-  type PanelId = "profiles" | "suppressions" | "duplicates" | "handover" | "bulkClose";
+  type PanelId = "profiles" | "suppressions" | "duplicates" | "bulkClose";
   const openPanel = useCallback((id: PanelId) => {
     setShowProfiles(id === "profiles");
     setShowSuppressions(id === "suppressions");
     setShowDuplicates(id === "duplicates");
-    setShowHandover(id === "handover");
     setShowBulkClose(id === "bulkClose");
   }, []);
   // Resumen operativo (Mi trabajo + KPIs + Sistema) colapsable y persistido —
@@ -803,7 +791,6 @@ export function CaseManagementDashboard() {
     return m;
   }, [operators]);
 
-  const statusDist = useStatusDist();
   // P1.6 (audit 2026-05-27): el banner "X casos sin asignar" cierra el flujo
   // con un click directo si hay Shift Manager activo. Si no, el botón se
   // oculta y queda sólo "Ver sin asignar" (filtro pasivo).
@@ -1747,9 +1734,6 @@ export function CaseManagementDashboard() {
 
   return (
     <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "system-ui, sans-serif" }}>
-      {/* Workflow Status Bar */}
-      <WorkflowStatusBar operatorCi={operatorCi} operatorRole={operatorRole} />
-
       {/* Barra de acciones masivas (P0 #12) — flotante, sólo con selección. */}
       {selectedIds.size > 0 && (
         <div style={{
@@ -1875,9 +1859,6 @@ export function CaseManagementDashboard() {
       <SideDrawer open={showDuplicates} onClose={() => setShowDuplicates(false)} title="Duplicados / fusión de casos" width={760}>
         <DuplicatePanel operatorCi={operatorCi} onClose={() => setShowDuplicates(false)} onMerged={() => void refetch()} />
       </SideDrawer>
-      <SideDrawer open={showHandover} onClose={() => setShowHandover(false)} title="Handover de turno" width={720}>
-        <HandoverPanel operatorCi={operatorCi} onClose={() => setShowHandover(false)} />
-      </SideDrawer>
       {isActiveShiftManager && operatorCi && (
         <SideDrawer open={showBulkClose} onClose={() => setShowBulkClose(false)} title="Cierre masivo" width={820}>
           <BulkCloseAssistant
@@ -1953,10 +1934,6 @@ export function CaseManagementDashboard() {
           )}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {operatorCi && <NotificationBell operatorCi={operatorCi} />}
-          <ExecutiveReportMenu
-            visible={operatorRole === "LEADER" || operatorRole === "ADMIN"}
-          />
           {/* Menú Herramientas — agrupa los paneles secundarios (ahora en sidebar). */}
           <HeaderMenu
             label="Herramientas"
@@ -1972,8 +1949,6 @@ export function CaseManagementDashboard() {
                   : "Sin duplicados pendientes" },
               { label: "Supresiones", icon: ShieldCheck, color: C.orange, onClick: () => openPanel("suppressions"),
                 title: "IOCs suprimidos (no generan nuevos casos mientras estén activos)" },
-              { label: "Handover de turno", icon: FileText, color: C.green, onClick: () => openPanel("handover"),
-                hidden: !(operatorRole === "LEADER" || operatorRole === "ADMIN") },
             ]}
           />
           {/* Menú Acciones masivas — escalar / cierre masivo. */}
@@ -2224,9 +2199,7 @@ export function CaseManagementDashboard() {
       <KpiStrip
         kpis={kpis}
         isLoading={isLoadingKpis}
-        statusDist={statusDist.data}
         onStatusFilter={applyStatusFilter}
-        activeStatus={statusFilter}
         onSevFilter={applySevFilter}
         onIncludeClosed={applyIncludeClosed}
       />
@@ -3675,30 +3648,16 @@ const CaseRow = memo(function CaseRow({
 
 // ── KPI Strip ──────────────────────────────────────────────────────────────────
 
-const STATUS_DIST_COLORS: Record<string, string> = {
-  NUEVO:          C.blue,
-  EN_ANALISIS:    C.orange,
-  CONFIRMADO:     C.red,
-  ESCALADO:       C.orange,
-  MONITOREADO:    C.info,
-  FALSO_POSITIVO: C.green,
-  CERRADO:        C.neutral,
-};
-
 function KpiStrip({
   kpis,
   isLoading,
-  statusDist,
   onStatusFilter,
-  activeStatus,
   onSevFilter,
   onIncludeClosed,
 }: {
   kpis: DashboardKpis | undefined;
   isLoading: boolean;
-  statusDist?: Array<{ status: string; severity: string; cnt: string | number }>;
   onStatusFilter: (s: CaseStatus | "ALL") => void;
-  activeStatus: CaseStatus | "ALL";
   onSevFilter?: (s: Severity | "ALL") => void;
   onIncludeClosed?: (b: boolean) => void;
 }) {
@@ -3706,20 +3665,7 @@ function KpiStrip({
   const slaRate = kpis && kpis.criticalSlaTotal > 0
     ? Math.round((kpis.criticalSlaOk / kpis.criticalSlaTotal) * 100)
     : null;
-  // Bloque (4): texto de ventana usado en los tooltips de Resueltos hoy /
-  // Ack promedio. "Hoy" en backend = hora local del proceso desde 00:00.
   const todayHint = "ventana: desde las 00:00 hora local del servidor";
-
-  // Aggregate by status
-  const byStatus: Record<string, number> = {};
-  for (const row of statusDist ?? []) {
-    byStatus[row.status] = (byStatus[row.status] ?? 0) + Number(row.cnt);
-  }
-  const statusEntries = Object.entries(byStatus).sort(
-    ([a], [b]) =>
-      ["NUEVO","EN_ANALISIS","CONFIRMADO","ESCALADO","MONITOREADO","FALSO_POSITIVO","CERRADO"].indexOf(a)
-      - ["NUEVO","EN_ANALISIS","CONFIRMADO","ESCALADO","MONITOREADO","FALSO_POSITIVO","CERRADO"].indexOf(b)
-  );
 
   return (
     <div style={{ marginBottom: 20 }}>
@@ -3800,51 +3746,6 @@ function KpiStrip({
           onClick={() => { onStatusFilter("CERRADO"); onIncludeClosed?.(true); }}
         />
       </div>
-
-      {/* Status distribution pills — clickable to filter */}
-      {statusEntries.length > 0 && (
-        <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
-          {/* "All" pill */}
-          <button
-            onClick={() => onStatusFilter("ALL")}
-            style={{
-              display: "flex", alignItems: "center", gap: 5,
-              background: activeStatus === "ALL" ? alpha(C.text, 9) : "transparent",
-              border: `1px solid ${activeStatus === "ALL" ? alpha(C.text, 25) : C.border}`,
-              borderRadius: 6, padding: "4px 10px", cursor: "pointer",
-            }}
-          >
-            <span style={{ fontSize: 10, color: activeStatus === "ALL" ? C.text : C.textDim, letterSpacing: "0.04em" }}>
-              Todos
-            </span>
-          </button>
-
-          {statusEntries.map(([status, cnt]) => {
-            const color = STATUS_DIST_COLORS[status] ?? C.textDim;
-            const isActive = activeStatus === status;
-            return (
-              <button
-                key={status}
-                onClick={() => onStatusFilter(status as CaseStatus)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 5,
-                  background: isActive ? alpha(color, 26) : alpha(color, 14),
-                  border: `1px solid ${isActive ? alpha(color, 55) : alpha(color, 31)}`,
-                  borderRadius: 6, padding: "4px 10px",
-                  cursor: "pointer",
-                  boxShadow: isActive ? `0 0 0 1px ${alpha(color, 28)}` : undefined,
-                  transition: "all 0.12s",
-                }}
-              >
-                <span style={{ fontSize: 16, fontWeight: 700, color }}>{cnt}</span>
-                <span style={{ fontSize: 10, color: isActive ? color : C.textDim, letterSpacing: "0.04em" }}>
-                  {STATUS_LABEL[status] ?? status}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
@@ -4328,231 +4229,6 @@ function DuplicatePanel({
   );
 }
 
-// ── HandoverPanel ─────────────────────────────────────────────────────────────
-
-interface HandoverReport {
-  id: string;
-  outgoing_manager_ci: string;
-  incoming_manager_ci: string | null;
-  shift: string;
-  open_cases_count: number;
-  critical_open_count: number;
-  sla_breached_count: number;
-  cases_closed_shift: number;
-  mtta_shift_min: number | null;
-  mttr_shift_min: number | null;
-  notes: string | null;
-  pending_actions: string | null;
-  created_at: string;
-  acknowledged_at: string | null;
-}
-
-// Infiere el turno actual a partir de la hora local del navegador.
-function currentShift(): "MORNING" | "AFTERNOON" | "NIGHT" {
-  const h = new Date().getHours();
-  if (h >= 6  && h < 14) return "MORNING";
-  if (h >= 14 && h < 22) return "AFTERNOON";
-  return "NIGHT";
-}
-
-function HandoverPanel({ operatorCi, onClose }: { operatorCi: string; onClose: () => void }) {
-  const [reports, setReports]   = React.useState<HandoverReport[]>([]);
-  const [loading, setLoading]   = React.useState(true);
-  const [error,   setError]     = React.useState<string | null>(null);
-  const [creating, setCreating] = React.useState(false);
-  const [showForm, setShowForm] = React.useState(false);
-  const [notes,    setNotes]    = React.useState("");
-  const [pending,  setPending]  = React.useState("");
-  const [incoming, setIncoming] = React.useState("");
-  const [shift,    setShift]    = React.useState<string>(currentShift());
-
-  // Candidatos a Manager entrante: solo LEADER/ADMIN activos distintos del saliente.
-  const { data: allOperators = [] } = useSocOperators();
-  const { data: currentShiftMgr }   = useShiftManager();
-  const outgoingCi = currentShiftMgr?.id ?? operatorCi;
-  const incomingCandidates = React.useMemo(
-    () => allOperators
-      .filter(o => o.is_active && ["LEADER","ADMIN"].includes(o.role_id) && o.id !== outgoingCi)
-      .sort((a,b) => a.name.localeCompare(b.name)),
-    [allOperators, outgoingCi],
-  );
-
-  async function load() {
-    setLoading(true); setError(null);
-    try {
-      const { data: d } = await api.get<{ ok?: boolean; reports?: HandoverReport[]; error?: string }>(
-        "/api/workflow/handover?limit=10",
-      );
-      if (d.ok) setReports(d.reports ?? []);
-      else setError(d.error ?? "Error al cargar reportes");
-    } catch (e) { setError(String(e)); } finally { setLoading(false); }
-  }
-
-  React.useEffect(() => { void load(); }, []);
-
-  async function createReport() {
-    setCreating(true); setError(null);
-    try {
-      const { data: d } = await api.post<{ ok?: boolean; id?: string; error?: string }>(
-        "/api/workflow/handover",
-        {
-          outgoingManagerCi: outgoingCi,
-          incomingManagerCi: incoming.trim() || undefined,
-          shift, notes: notes.trim() || undefined,
-          pendingActions: pending.trim() || undefined,
-        },
-        { headers: { "x-operator-ci": outgoingCi } },
-      );
-      if (!d.ok) throw new Error(d.error ?? "handover create failed");
-      setShowForm(false); setNotes(""); setPending(""); setIncoming("");
-      void load();
-    } catch (e) { setError(String(e)); } finally { setCreating(false); }
-  }
-
-  async function acknowledge(reportId: string) {
-    try {
-      await api.post(
-        `/api/workflow/handover/${reportId}/acknowledge`,
-        null,
-        { headers: { "x-operator-ci": outgoingCi } },
-      );
-      void load();
-    } catch { /* ignorar */ }
-  }
-
-  function fmtDate(ts: string) {
-    try { return formatDateTimePy(ts, { year: undefined, second: undefined, day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }); }
-    catch { return ts; }
-  }
-
-  return (
-    <div style={{ background: C.card, border: `1px solid ${alpha(C.green, 25)}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 12 }}>
-        <div>
-          <span style={{ fontSize: 13, fontWeight: 700, color: C.green }}>Handover de turno</span>
-          <span style={{ fontSize: 11, color: C.textDim, marginLeft: 8 }}>Últimos 10 reportes</span>
-        </div>
-        <div style={{ display:"flex", gap: 8 }}>
-          <button onClick={() => setShowForm((v) => !v)} style={{ ...btnStyle, color:C.green, borderColor: alpha(C.green, 25), fontSize:11 }}>
-            {showForm ? "Cancelar" : "+ Crear reporte"}
-          </button>
-          <button onClick={load}    style={{ ...btnStyle, fontSize:11 }}>Refrescar</button>
-          <button onClick={onClose} style={{ ...btnStyle, fontSize:11 }}>Cerrar</button>
-        </div>
-      </div>
-
-      {showForm && (
-        <div style={{ background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, padding:12, marginBottom:16, display:"flex", flexDirection:"column", gap:8 }}>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            <div style={{ display:"flex", flexDirection:"column", gap:3, flex:1 }}>
-              <label style={{ fontSize:10, color:C.textDim }}>Manager entrante (LEADER/ADMIN activo)</label>
-              <select value={incoming} onChange={e => setIncoming(e.target.value)}
-                style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:4, padding:"5px 8px", color:C.text, fontSize:12 }}>
-                <option value="">— Sin asignar —</option>
-                {incomingCandidates.map(o => (
-                  <option key={o.id} value={o.id}>
-                    {o.name} · {o.role_id} · {o.id}{o.shift ? ` · ${o.shift}` : ""}
-                  </option>
-                ))}
-              </select>
-              {incomingCandidates.length === 0 && (
-                <span style={{ fontSize:10, color:C.textDim }}>No hay otros LEADER/ADMIN activos disponibles.</span>
-              )}
-            </div>
-            <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
-              <label style={{ fontSize:10, color:C.textDim }}>Turno</label>
-              <select value={shift} onChange={e => setShift(e.target.value)}
-                style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:4, padding:"5px 8px", color:C.text, fontSize:12 }}>
-                {["MORNING","AFTERNOON","NIGHT","ON_CALL"].map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
-            <label style={{ fontSize:10, color:C.textDim }}>Notas del turno</label>
-            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Resumen del turno saliente…"
-              style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:4, padding:"6px 8px", color:C.text, fontSize:12, resize:"vertical" }} />
-          </div>
-          <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
-            <label style={{ fontSize:10, color:C.textDim }}>Acciones pendientes para el turno entrante</label>
-            <textarea rows={2} value={pending} onChange={e => setPending(e.target.value)} placeholder="Acciones que requieren seguimiento…"
-              style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:4, padding:"6px 8px", color:C.text, fontSize:12, resize:"vertical" }} />
-          </div>
-          <button onClick={createReport} disabled={creating}
-            style={{ ...btnStyle, color:C.green, borderColor: alpha(C.green, 25), alignSelf:"flex-end" }}>
-            {creating ? "Creando…" : "Crear reporte"}
-          </button>
-        </div>
-      )}
-
-      {error && <div style={{ color:C.red, fontSize:12, marginBottom:8 }}>{error}</div>}
-      {loading && <div style={{ color:C.textDim, fontSize:12 }}>Cargando…</div>}
-      {!loading && reports.length === 0 && (
-        <div style={{ color:C.textDim, fontSize:12 }}>Sin reportes de handover disponibles.</div>
-      )}
-
-      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-        {reports.map((rpt) => {
-          const ageMin = (Date.now() - new Date(rpt.created_at).getTime()) / 60000;
-          const isStale = !rpt.acknowledged_at && ageMin > 120; // SLA: 2 h sin ack
-          const borderColor = rpt.acknowledged_at ? C.border : (isStale ? C.red : alpha(C.green, 25));
-          return (
-          <div key={rpt.id} style={{
-            background: isStale ? alpha(C.red, 3) : C.bg,
-            border: `1px solid ${borderColor}`,
-            borderRadius:8, padding:"10px 12px",
-          }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                <span style={{ fontSize:11, fontWeight:600, color:C.green }}>{rpt.shift}</span>
-                <span style={{ fontSize:11, color:C.textDim }}>{rpt.outgoing_manager_ci} → {rpt.incoming_manager_ci ?? "—"}</span>
-                <span style={{ fontSize:10, color:C.textDim }}>{fmtDate(rpt.created_at)}</span>
-                {isStale && (
-                  <span style={{ fontSize:10, color:C.red, fontWeight:700 }}>
-                    ⚠ SIN CONFIRMAR · {Math.round(ageMin/60)}h
-                  </span>
-                )}
-              </div>
-              {!rpt.acknowledged_at && rpt.incoming_manager_ci === operatorCi && (
-                <button onClick={() => acknowledge(rpt.id)}
-                  style={{ ...btnStyle, fontSize:10, padding:"3px 10px", color:C.green, borderColor: alpha(C.green, 25) }}>
-                  ✓ Confirmar recepción
-                </button>
-              )}
-              {rpt.acknowledged_at && (
-                <span style={{ fontSize:10, color:C.green }}>✓ Confirmado {fmtDate(rpt.acknowledged_at)}</span>
-              )}
-            </div>
-            <div style={{ display:"flex", gap:16, flexWrap:"wrap", fontSize:11, color:C.textDim }}>
-              <span>🔓 Abiertos: <b style={{ color:C.text }}>{rpt.open_cases_count}</b></span>
-              <span style={{ color: rpt.critical_open_count > 0 ? C.red : C.textDim }}>
-                🔴 Críticos: <b>{rpt.critical_open_count}</b>
-              </span>
-              <span style={{ color: rpt.sla_breached_count > 0 ? C.orange : C.textDim }}>
-                ⏱ SLA vencidos: <b>{rpt.sla_breached_count}</b>
-              </span>
-              <span>✅ Cerrados: <b style={{ color:C.text }}>{rpt.cases_closed_shift}</b></span>
-              {rpt.mtta_shift_min != null && <span>MTTA: <b>{rpt.mtta_shift_min}m</b></span>}
-              {rpt.mttr_shift_min != null && <span>MTTR: <b>{rpt.mttr_shift_min}m</b></span>}
-            </div>
-            {rpt.notes && (
-              <div style={{ marginTop:6, fontSize:11, color:C.textDim, borderTop:`1px solid ${C.border}`, paddingTop:6 }}>
-                <b style={{ color:C.text }}>Notas:</b> {rpt.notes}
-              </div>
-            )}
-            {rpt.pending_actions && (
-              <div style={{ marginTop:4, fontSize:11, color:C.orange }}>
-                <b>Pendiente:</b> {rpt.pending_actions}
-              </div>
-            )}
-          </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 // ── Skeleton row ───────────────────────────────────────────────────────────
 // Simula un row de la tabla durante isLoading cuando aún no hay datos cached.

@@ -2,7 +2,6 @@ import { Menu } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import {
   Activity,
-  ClipboardList,
   ShieldAlert,
   ShieldCheck,
   Settings,
@@ -31,7 +30,6 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { to: "/noc", label: "NOC", icon: Activity, end: true },
   { to: "/detection", label: "Detección", icon: ShieldAlert },
-  { to: "/soc", label: "SOC", icon: ClipboardList },
   { to: "/gestion", label: "Incidentes", icon: ShieldCheck },
   { to: "/admin/settings", label: "Config", icon: Settings },
 ];

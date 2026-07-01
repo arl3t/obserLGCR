@@ -18,7 +18,7 @@ import { trinoExec } from "./trinoWriter.mjs";
 import { getCachedThresholds } from "./socThresholds.mjs";
 import { decideClosureClassification } from "./closureClassification.mjs";
 import { upsertSuppressionsBatch } from "./caseSuppression.mjs";
-import { invalidateCasesKpisCache } from "../routes/caseInvestigation.mjs";
+import { invalidateCasesKpisCache } from "./casesKpisCache.mjs";
 import { screenIocMalice, guessIocType } from "./enrichmentService.mjs";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
