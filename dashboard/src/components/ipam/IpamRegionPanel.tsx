@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, Edit2, Globe, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Edit2, Globe, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   createIpamRegion,
@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 
 type Props = {
   regions: IpamRegion[];
+  regionsLoading?: boolean;
   regionFilter: number | "";
   onFilter: (id: number | "") => void;
   errMsg: (e: unknown) => string;
@@ -33,7 +34,13 @@ const emptyRir = (): RirFields => ({
   internal_asn: "",
 });
 
-export function IpamRegionPanel({ regions, regionFilter, onFilter, errMsg }: Props) {
+export function IpamRegionPanel({
+  regions,
+  regionsLoading = false,
+  regionFilter,
+  onFilter,
+  errMsg,
+}: Props) {
   const qc = useQueryClient();
   const [showNew, setShowNew] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
@@ -69,6 +76,7 @@ export function IpamRegionPanel({ regions, regionFilter, onFilter, errMsg }: Pro
       invalidate();
     },
     onError: (e) => toast.error(errMsg(e)),
+    onSettled: () => invalidate(),
   });
 
   const updateMut = useMutation({
@@ -114,6 +122,18 @@ export function IpamRegionPanel({ regions, regionFilter, onFilter, errMsg }: Pro
 
   const onCreate = (e: FormEvent) => {
     e.preventDefault();
+    const name = newName.trim();
+    if (!name) {
+      toast.error("Indique un nombre de región");
+      return;
+    }
+    const existing = regions.find((r) => r.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      toast.error(`La región «${existing.name}» ya existe`);
+      onFilter(existing.id);
+      setShowNew(false);
+      return;
+    }
     createMut.mutate();
   };
 
@@ -195,7 +215,14 @@ export function IpamRegionPanel({ regions, regionFilter, onFilter, errMsg }: Pro
           </button>
           {showRirNew && <RirForm value={newRir} onChange={setNewRir} />}
           <Button type="submit" size="sm" className="h-7 w-full text-[11px]" disabled={createMut.isPending}>
-            Crear región
+            {createMut.isPending ? (
+              <>
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                Creando…
+              </>
+            ) : (
+              "Crear región"
+            )}
           </Button>
         </form>
       )}
@@ -211,6 +238,17 @@ export function IpamRegionPanel({ regions, regionFilter, onFilter, errMsg }: Pro
         >
           Todas las regiones
         </button>
+
+        {regionsLoading && (
+          <div className="flex items-center gap-2 px-2 py-3 text-[11px] text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Cargando regiones…
+          </div>
+        )}
+
+        {!regionsLoading && regions.length === 0 && (
+          <p className="px-2 py-2 text-[11px] text-muted-foreground">Sin regiones. Use + para crear una.</p>
+        )}
 
         {regions.map((r) => (
           <div key={r.id} className="group rounded-lg hover:bg-muted/20">

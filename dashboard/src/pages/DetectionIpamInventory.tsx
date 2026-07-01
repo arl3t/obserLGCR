@@ -71,8 +71,14 @@ function errMsg(e: unknown): string {
   if (isAxiosError(e)) {
     const status = e.response?.status;
     const d = e.response?.data;
+    if (status === 401) {
+      return "Sesión expirada o token inválido. Vuelva a iniciar sesión.";
+    }
     if (status === 404) {
-      return "IPAM no disponible (404). Ejecute: docker compose up -d ipam dashboard";
+      return "IPAM no encontrado (404). Compruebe: docker compose up -d ipam dashboard · curl http://localhost:8790/health";
+    }
+    if (status === 502 || status === 503) {
+      return "Servicio IPAM no disponible. Ejecute: docker compose up -d ipam";
     }
     if (d && typeof d === "object" && "detail" in d) {
       const detail = d.detail;
@@ -81,6 +87,9 @@ function errMsg(e: unknown): string {
         return String((detail as { message: string }).message);
       }
       if (Array.isArray(detail)) return detail.map((x) => x.msg ?? String(x)).join("; ");
+    }
+    if (status === 409) {
+      return "Conflicto: el recurso ya existe o tiene dependencias.";
     }
     return e.message;
   }
@@ -292,7 +301,12 @@ export function DetectionIpamInventoryPage() {
     expires_at: "",
   });
 
-  const regionsQ = useQuery({ queryKey: ["ipam", "regions"], queryFn: fetchIpamRegions, retry: 1 });
+  const regionsQ = useQuery({
+    queryKey: ["ipam", "regions"],
+    queryFn: fetchIpamRegions,
+    retry: 1,
+    refetchOnMount: "always",
+  });
   const subnetsQ = useQuery({
     queryKey: ["ipam", "subnets", regionFilter],
     queryFn: () => fetchIpamSubnets(regionFilter === "" ? undefined : regionFilter),
@@ -572,6 +586,7 @@ export function DetectionIpamInventoryPage() {
           <div className="ipam-layout">
             <IpamRegionPanel
               regions={regionsQ.data ?? []}
+              regionsLoading={regionsQ.isLoading || regionsQ.isFetching}
               regionFilter={regionFilter}
               onFilter={setRegionFilter}
               errMsg={errMsg}

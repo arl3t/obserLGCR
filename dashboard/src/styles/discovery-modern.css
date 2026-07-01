@@ -1,0 +1,105 @@
+/* Módulo Descubrimiento nmap — obserLGCR */
+
+.discovery-shell {
+  --disc-accent: rgb(56 189 248);
+  --disc-violet: rgb(167 139 250);
+}
+
+.discovery-kpi-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.discovery-kpi {
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 0.75rem;
+  background: rgb(255 255 255 / 0.03);
+  padding: 0.75rem 1rem;
+}
+
+.discovery-tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.discovery-tab {
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 12px;
+  color: rgb(255 255 255 / 0.55);
+  transition: background 0.15s, color 0.15s;
+}
+
+.discovery-tab--active {
+  background: rgb(56 189 248 / 0.12);
+  color: rgb(103 232 249);
+}
+
+.discovery-host-grid {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.discovery-host-card {
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 0.65rem;
+  padding: 0.65rem;
+  background: rgb(255 255 255 / 0.02);
+  transition: border-color 0.15s;
+}
+
+.discovery-host-card--documented {
+  border-color: rgb(52 211 153 / 0.35);
+}
+
+.discovery-host-card--up {
+  box-shadow: inset 3px 0 0 rgb(52 211 153 / 0.7);
+}
+
+.discovery-map-svg {
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 0.75rem;
+  background: radial-gradient(circle at 50% 30%, rgb(56 189 248 / 0.06), transparent 55%);
+}
+
+.discovery-roadmap-item {
+  border-left: 2px solid rgb(167 139 250 / 0.45);
+  padding-left: 0.75rem;
+}
+
+.discovery-status-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  padding: 0.1rem 0.45rem;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.discovery-status-pill--running {
+  background: rgb(56 189 248 / 0.15);
+  color: rgb(103 232 249);
+}
+
+.discovery-status-pill--completed {
+  background: rgb(52 211 153 / 0.15);
+  color: rgb(110 231 183);
+}
+
+.discovery-status-pill--failed {
+  background: rgb(248 113 113 / 0.15);
+  color: rgb(252 165 165);
+}
+
+.discovery-status-pill--pending {
+  background: rgb(255 255 255 / 0.08);
+  color: rgb(255 255 255 / 0.55);
+}

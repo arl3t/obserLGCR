@@ -34,6 +34,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      ipam:
+        condition: service_started
     environment:
       # ── Sin autenticación (modo lab) ──────────────────────────────────────
       OIDC_ENABLED: "false"
@@ -50,7 +52,7 @@ services:
       TRINO_URL: ""
       NOC_AGENT_TOKEN: ${NOC_AGENT_TOKEN:-}
       PLATFORM_AUTH_ENABLED: ${PLATFORM_AUTH_ENABLED:-true}
-      AGENT_JWT_SECRET: ${AGENT_JWT_SECRET:-obserlgcr-agent-dev-secret-change-me}
+      AGENT_JWT_SECRET: ${AGENT_JWT_SECRET:-change-me-agent-jwt-secret}
       NOC_WATCHER_INTERVAL_MS: ${NOC_WATCHER_INTERVAL_MS:-30000}
       GOVERNANCE_INCIDENT_WORKER: ${GOVERNANCE_INCIDENT_WORKER:-true}
       GOVERNANCE_INCIDENT_INTERVAL_MS: ${GOVERNANCE_INCIDENT_INTERVAL_MS:-15000}
@@ -59,6 +61,8 @@ services:
       CRON_SECRET: ${CRON_SECRET:-}
       DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:8080}
       SOCKETIO_CORS_ORIGINS: ${SOCKETIO_CORS_ORIGINS:-}
+      IPAM_HOST: ipam
+      IPAM_PORT: "8000"
     ports:
       - "${API_PORT:-8787}:8787"
     volumes:
@@ -92,10 +96,15 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${PG_USER:-obserlgcr}:${PG_PASSWORD:-obserlgcr}@postgres:5432/${PG_DATABASE:-obserlgcr}
-      AGENT_JWT_SECRET: ${AGENT_JWT_SECRET:-obserlgcr-agent-dev-secret-change-me}
+      AGENT_JWT_SECRET: ${AGENT_JWT_SECRET:-change-me-agent-jwt-secret}
       PLATFORM_AUTH_ENABLED: ${PLATFORM_AUTH_ENABLED:-true}
       NMAP_TIMEOUT_SEC: ${NMAP_TIMEOUT_SEC:-600}
       NMAP_HOST_TIMEOUT_SEC: ${NMAP_HOST_TIMEOUT_SEC:-5}
+      # nmap en LAN 192.168.x.x: ejecutar en el host → python3 scripts/nmap-host-runner.py
+      NMAP_RUNNER_URL: ${NMAP_RUNNER_URL:-http://host.docker.internal:8791}
+      NMAP_RUNNER_TOKEN: ${NMAP_RUNNER_TOKEN:-change-me-nmap-runner}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${IPAM_PORT:-8790}:8000"
 

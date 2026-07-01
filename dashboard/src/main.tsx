@@ -15,6 +15,7 @@ import "./styles/obser-uptime.css";
 import "./styles/noc-modern.css";
 import "./styles/detection-modern.css";
 import "./styles/ipam-modern.css";
+import "./styles/discovery-modern.css";
 
 initSentry();
 

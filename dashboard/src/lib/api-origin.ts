@@ -1,12 +1,13 @@
 /**
- * Origen del API para axios desde el navegador.
+ * Resolución de origen del API para axios desde el navegador.
  *
- * - `VITE_API_BASE_URL` definido → URL absoluta (requiere CORS en el backend).
- * - Vacío → rutas relativas `/api/*` (nginx Docker :8080, proxy Vite :5173).
- * - Fallback runtime → `:8787` en el mismo host (lab/LAN) si el proxy falla.
+ * IPAM (`/api/v1/ipam/*`) siempre va al mismo origen (nginx :8080 o Vite :5173).
+ * El API Node y nginx reenvían al microservicio ipam — nunca llamar :8790 desde el browser.
  */
 
-const PROXY_PORTS = new Set(["80", "443", "8080", "8443", "5173", "5174", "4173", "4174"]);
+export function isIpamApiPath(url: string): boolean {
+  return url.startsWith("/api/v1/ipam");
+}
 
 function isLabHostname(hostname: string): boolean {
   const h = hostname.toLowerCase();
@@ -18,14 +19,19 @@ function isLabHostname(hostname: string): boolean {
   return false;
 }
 
-/** API directo en :8787 (mismo host que el dashboard). CORS habilitado en modo demo. */
-export function getDirectLabApiBase(): string {
+function labDirectBase(port: number): string {
   if (typeof window === "undefined") return "";
   const { hostname, protocol } = window.location;
   if (!isLabHostname(hostname)) return "";
   const proto = protocol === "https:" ? "https:" : "http:";
-  return `${proto}//${hostname}:8787`.replace(/\/$/, "");
+  return `${proto}//${hostname}:${port}`.replace(/\/$/, "");
 }
+
+export function getDirectLabApiBase(): string {
+  return labDirectBase(8787);
+}
+
+const PROXY_PORTS = new Set(["80", "443", "8080", "8443", "5173", "5174", "4173", "4174"]);
 
 function effectivePort(): string {
   if (typeof window === "undefined") return "";
@@ -33,16 +39,11 @@ function effectivePort(): string {
   return port || (protocol === "https:" ? "443" : "80");
 }
 
-let runtimeFallback = "";
+export function getLegacyHuntApiBase(url = ""): string {
+  if (isIpamApiPath(url)) return "";
 
-export function setRuntimeApiFallback(base: string): void {
-  runtimeFallback = base.replace(/\/$/, "");
-}
-
-export function getLegacyHuntApiBase(): string {
   const env = (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/$/, "");
   if (env) return env;
-  if (runtimeFallback) return runtimeFallback;
   if (import.meta.env.DEV) return "";
 
   if (typeof window !== "undefined") {
@@ -55,13 +56,23 @@ export function getLegacyHuntApiBase(): string {
   return "";
 }
 
-export function shouldRetryApiOnNetworkError(config: { baseURL?: string; __apiRetried?: boolean } | undefined): boolean {
-    if (!config || config.__apiRetried) return false;
+/** Mismo origen — IPAM nunca usa puerto directo :8790 en el browser. */
+export function resolveRequestBaseUrl(url: string): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  if (isIpamApiPath(url)) return window.location.origin;
+  const b = getLegacyHuntApiBase(url);
+  return b || window.location.origin;
+}
+
+export function shouldRetryMainApiOnNetworkError(
+  config: { baseURL?: string; url?: string; __apiRetried?: boolean } | undefined,
+): boolean {
+  if (!config || config.__apiRetried) return false;
+  if (isIpamApiPath(config.url ?? "")) return false;
   const env = (import.meta.env.VITE_API_BASE_URL ?? "").trim();
   if (env) return false;
   const current = (config.baseURL ?? "").replace(/\/$/, "");
   const origin = typeof window !== "undefined" ? window.location.origin : "";
-  // Reintentar con :8787 si falló vía proxy/same-origin
   if (current && origin && current !== origin) return false;
   return Boolean(getDirectLabApiBase());
 }

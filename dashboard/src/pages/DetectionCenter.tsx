@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { DetectionObservabilityFooter } from "@/components/detection/DetectionObservabilityFooter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BarChart3, Database, Network, Search } from "lucide-react";
+import { BarChart3, Database, Network, Radar, Search } from "lucide-react";
 
 const DetectionOverviewPage = lazy(() =>
   import("./DetectionOverview").then((m) => ({ default: m.DetectionOverviewPage })),
@@ -18,6 +18,9 @@ const DetectionLogExplorerPage = lazy(() =>
 const DetectionIpamInventoryPage = lazy(() =>
   import("./DetectionIpamInventory").then((m) => ({ default: m.DetectionIpamInventoryPage })),
 );
+const DetectionNetworkDiscoveryPage = lazy(() =>
+  import("./DetectionNetworkDiscovery").then((m) => ({ default: m.DetectionNetworkDiscoveryPage })),
+);
 
 function TabFallback() {
   return (
@@ -29,13 +32,14 @@ function TabFallback() {
   );
 }
 
-const VALID_TABS = new Set(["overview", "sources", "explorer", "inventory"]);
+const VALID_TABS = new Set(["overview", "sources", "explorer", "inventory", "discovery"]);
 
 const TAB_META = [
   { id: "overview", label: "Resumen", icon: BarChart3, desc: "KPIs y actividad 24h" },
   { id: "sources", label: "Fuentes", icon: Database, desc: "Catálogo y shipper" },
   { id: "explorer", label: "Explorador", icon: Search, desc: "Buscar y analizar eventos" },
   { id: "inventory", label: "Inventario", icon: Network, desc: "IPAM · redes RFC 1918" },
+  { id: "discovery", label: "Descubrimiento", icon: Radar, desc: "nmap · escaneo y mapa de red" },
 ] as const;
 
 export function DetectionCenterPage() {
@@ -84,6 +88,9 @@ export function DetectionCenterPage() {
           </TabsContent>
           <TabsContent value="inventory" className="m-0 flex-1">
             <DetectionIpamInventoryPage />
+          </TabsContent>
+          <TabsContent value="discovery" className="m-0 flex-1">
+            <DetectionNetworkDiscoveryPage />
           </TabsContent>
         </Suspense>
       </Tabs>

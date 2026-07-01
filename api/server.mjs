@@ -44,6 +44,7 @@ import { primeCatalogCache } from "./services/sourceLogCatalog.mjs";
 import { startGovernanceIncidentWorker } from "./services/governanceIncidentWorker.mjs";
 import { isTimescaleAvailable } from "./services/nocTimescale.mjs";
 import inventoryRouter from "./routes/inventory.mjs";
+import { ipamProxyMiddleware } from "./middleware/ipamProxy.mjs";
 
 const PORT = config.PORT;
 
@@ -97,6 +98,10 @@ app.use(
 );
 app.use(globalLimiter);
 app.use(httpLogger);
+
+// IPAM — proxy raw antes de express.json (mismo origen :8080 / :5173 vía API Node)
+app.use("/api/v1/ipam", ipamProxyMiddleware);
+
 app.use(express.json({ limit: "2mb" }));
 
 // ── Health / readiness ────────────────────────────────────────────────────────

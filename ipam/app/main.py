@@ -7,8 +7,9 @@ from psycopg2.errors import UniqueViolation
 from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
-from app.routers import addresses, inventory, regions, subnets, tools
-from app.services.nmap_discovery import is_nmap_available
+from app.routers import addresses, discovery, inventory, regions, subnets, tools
+from app.services.nmap_discovery import is_nmap_available, is_nmap_runner_configured
+from app.services.nmap_runner_client import check_nmap_runner_health
 from app.services.scheduler import refresh_scan_jobs, start_scheduler, stop_scheduler
 
 
@@ -29,8 +30,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?",
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -45,7 +46,15 @@ async def integrity_error_handler(_request, exc: IntegrityError):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "service": "ipam", "nmap_available": is_nmap_available(), "auth": settings.platform_auth_enabled}
+    runner = is_nmap_runner_configured()
+    return {
+        "ok": True,
+        "service": "ipam",
+        "nmap_available": is_nmap_available(),
+        "nmap_mode": "host_runner" if runner else "container",
+        "nmap_runner_ok": check_nmap_runner_health() if runner else None,
+        "auth": settings.platform_auth_enabled,
+    }
 
 
 app.include_router(regions.router, prefix="/api/v1/ipam")
@@ -53,3 +62,4 @@ app.include_router(subnets.router, prefix="/api/v1/ipam")
 app.include_router(addresses.router, prefix="/api/v1/ipam")
 app.include_router(inventory.router, prefix="/api/v1/ipam")
 app.include_router(tools.router, prefix="/api/v1/ipam")
+app.include_router(discovery.router, prefix="/api/v1/ipam")

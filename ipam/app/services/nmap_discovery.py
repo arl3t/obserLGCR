@@ -27,7 +27,17 @@ class NmapScanError(RuntimeError):
     pass
 
 
+from app.config import settings
+from app.services.nmap_runner_client import NmapRunnerError, run_nmap_via_runner
+
+
+def is_nmap_runner_configured() -> bool:
+    return bool((settings.nmap_runner_url or "").strip())
+
+
 def is_nmap_available() -> bool:
+    if is_nmap_runner_configured():
+        return True
     return shutil.which("nmap") is not None
 
 
@@ -118,7 +128,17 @@ def run_nmap_host_discovery(cidr: str) -> tuple[list[NmapHost], str]:
     """
     Escaneo de descubrimiento (-sn) con resolución DNS inversa.
     Devuelve hosts activos y versión/resumen de nmap.
+
+    Si NMAP_RUNNER_URL está definido, nmap se ejecuta en el host (acceso a LAN 192.168.x.x).
     """
+    if is_nmap_runner_configured():
+        try:
+            xml_text, summary = run_nmap_via_runner(cidr)
+        except NmapRunnerError as exc:
+            raise NmapScanError(str(exc)) from exc
+        hosts = filter_hosts_in_subnet(parse_nmap_xml(xml_text), cidr)
+        return hosts, summary
+
     if not is_nmap_available():
         raise NmapNotAvailableError(
             "nmap no está instalado en el contenedor IPAM. Reconstruya: docker compose build ipam",

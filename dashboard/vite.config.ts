@@ -132,22 +132,16 @@ export default defineConfig(({ mode }) => {
       // Móvil / otra máquina en LAN: http://<IP-del-Mac>:5173 — el proxy sigue yendo a legacyhunt-api en el host.
       host: true,
       proxy: {
-        "/api/v1/ipam": {
-          target: "http://127.0.0.1:8790",
-          changeOrigin: true,
-        },
         "/api": {
           target: "http://127.0.0.1:8787",
           changeOrigin: true,
-          // WebSocket para Socket.io (/api/socket.io/...)
           ws: true,
-          /** Si :8787 está caído, sin esto la petición puede caer al SPA y devolver index.html (JSON parse → "Respuesta HTML"). */
           configure(proxy: { on: (ev: string, fn: (...args: unknown[]) => void) => void }) {
             proxy.on("error", (_err: unknown, _req: unknown, res: unknown) => {
               writeProxyApi502(res, {
                 ok: false,
                 error:
-                  "Proxy Vite: sin conexión a obserlgcr-api en 127.0.0.1:8787. Arranque: docker compose up -d api",
+                  "Proxy Vite: sin conexión a obserlgcr-api en 127.0.0.1:8787. Arranque: docker compose up -d api ipam",
               });
             });
           },
@@ -160,10 +154,6 @@ export default defineConfig(({ mode }) => {
       port: 4173,
       host: true,
       proxy: {
-        "/api/v1/ipam": {
-          target: "http://127.0.0.1:8790",
-          changeOrigin: true,
-        },
         "/api": {
           target: "http://127.0.0.1:8787",
           changeOrigin: true,
@@ -173,7 +163,7 @@ export default defineConfig(({ mode }) => {
               writeProxyApi502(res, {
                 ok: false,
                 error:
-                  "Proxy preview: sin conexión a obserlgcr-api en 127.0.0.1:8787. Arranque: docker compose up -d api",
+                  "Proxy preview: sin conexión a obserlgcr-api en 127.0.0.1:8787. Arranque: docker compose up -d api ipam",
               });
             });
           },
