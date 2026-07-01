@@ -45,6 +45,19 @@ const TYPE_CONFIG = {
     mitreTacticId: "TA0008",
     defaultScore: 65,
   },
+  unknown_asset: {
+    sourceLog: "noc_inventory_governance",
+    mitreTacticId: "TA0007",
+    scoreMap: { CRITICAL: 78, HIGH: 72, MEDIUM: 65, LOW: 55, NEGLIGIBLE: 45 },
+    defaultScore: 72,
+    incidentCategory: "UNAUTHORIZED_ACCESS",
+  },
+  undocumented_host: {
+    sourceLog: "noc_inventory_governance",
+    mitreTacticId: "TA0007",
+    defaultScore: 68,
+    incidentCategory: "INVESTIGATION",
+  },
 };
 
 function isIp(v) {
@@ -65,6 +78,10 @@ function buildRecommendedAction(row) {
       return `Software no aprobado: ${p.software_name ?? "?"}. Verificar política de software autorizado.`;
     case "keepalive_down":
       return `Verificar conectividad y agente NOC en ${row.hostname}.`;
+    case "unknown_asset":
+      return `Activo no reconocido: ${row.hostname}. Verificar origen, documentar en inventario (ACK) o aislar si es rogue.`;
+    case "undocumented_host":
+      return `Host descubierto sin documentar: ${row.hostname}. Confirmar legitimidad y marcar como activo conocido.`;
     default:
       return `Revisar alerta NOC: ${row.incident_type} en ${row.hostname}.`;
   }
@@ -99,12 +116,14 @@ async function openCaseFromQueue(row) {
   const caseId = randomUUID();
   const now = new Date().toISOString();
   const score = scoreFor(row.incident_type, row.severity);
+  const payload = row.payload ?? {};
   const enrichment = {
     incidents_queue_id: row.id,
     incident_type: row.incident_type,
     server_id: row.server_id,
     node_id: row.node_id,
-    payload: row.payload,
+    noc_device_id: row.node_id ?? payload.noc_device_id ?? null,
+    payload,
     auto_opened: true,
   };
   const timeline = {
@@ -118,11 +137,11 @@ async function openCaseFromQueue(row) {
     `INSERT INTO incident_cases_pg (
        id, severity, status, score, operator_id, hostname, sensor_key, network_zone,
        ioc_value, ioc_type, source_log, dedup_key, detected_at,
-       enrichment_data, recommended_action, timeline
+       enrichment_data, recommended_action, timeline, incident_category
      ) VALUES (
        $1, $2, 'NUEVO', $3, NULL, $4, $4, $5,
        $6, $7, $8, $9, $10,
-       $11::jsonb, $12, jsonb_build_array($13::jsonb)
+       $11::jsonb, $12, jsonb_build_array($13::jsonb), $14
      )`,
     [
       caseId,
@@ -138,6 +157,7 @@ async function openCaseFromQueue(row) {
       JSON.stringify(enrichment),
       buildRecommendedAction(row),
       JSON.stringify(timeline),
+      cfg.incidentCategory ?? null,
     ],
   );
 

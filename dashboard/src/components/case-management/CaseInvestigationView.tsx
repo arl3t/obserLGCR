@@ -31,7 +31,6 @@ import {
 import { CloseCaseModal, ReportPreviewModal, NotifyClientModal } from "./InvestigationModals";
 import { IncidentVerdictCard } from "./IncidentVerdictCard";
 import { HuntVerdictCard } from "./HuntVerdictCard";
-import { CaseTicketsCard } from "./CaseTicketsCard";
 import { GeoOriginCard } from "./GeoOriginCard";
 import { ViewersStack } from "./ViewersStack";
 import { useCaseViewers } from "./useCaseViewers";
@@ -407,7 +406,6 @@ export function CaseInvestigationView({
               <aside className="space-y-4 lg:col-span-3">
                 <IncidentVerdictCard c={c} />
                 <HuntVerdictCard c={c} />
-                <CaseTicketsCard c={c} />
                 <GeoOriginCard c={c} />
                 <SimilarCasesCard caseId={caseId} />
                 <HuntingInsights c={c} />

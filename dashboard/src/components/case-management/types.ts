@@ -95,6 +95,14 @@ export interface IncidentClass {
   source:   string;        // intel | mitre | ioc-type | detection | default
 }
 
+export interface GovernanceContext {
+  sourceLog: string;
+  incidentType: string | null;
+  nocDeviceId: string | null;
+  payload: Record<string, unknown>;
+  autoOpened: boolean;
+}
+
 export interface SocCase {
   /** incident_key (UUID/hex — PK técnica) */
   id:               string;
@@ -193,6 +201,9 @@ export interface SocCase {
   // ── Notificaciones ────────────────────────────────────────────────────────
   /** ISO timestamp de la última notificación Slack; null si no se ha enviado. */
   slackNotifiedAt:  string | null;
+
+  /** Casos originados en gobernanza NOC (software, inventario). */
+  governanceContext?: GovernanceContext | null;
 }
 
 // ── Scoring detail (GET /api/incidents/:id/scoring-detail) ───────────────────

@@ -242,6 +242,9 @@ export function FleetUptimeMonitor({
                     </td>
                     <td className="ut-table__host">
                       {d.hostname}
+                      {!d.inventory_ack && (
+                        <span className="noc-fleet-alert-chip" title="Sin ACK inventario">ACK</span>
+                      )}
                       {(d.open_alerts ?? 0) > 0 && (
                         <span className="noc-fleet-alert-chip">{d.open_alerts}</span>
                       )}

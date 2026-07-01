@@ -67,7 +67,6 @@ import {
   STATUS_TO_STAGE,
 } from "../services/workflowEngine.mjs";
 import { decideClosureClassification } from "../services/closureClassification.mjs";
-import { getOpenTicketsForCase } from "../services/ticketService.mjs";
 import { parseBulkCloseCriteria } from "../services/bulkCloseCriteria.mjs";
 import { isTrustedOriginWithScanners, loadBenignScannerIps } from "../services/trustedOriginMatcher.mjs";
 import {
@@ -4984,31 +4983,6 @@ export default function incidentsRouter(runQuery, getIo, ensureFreshCtiSnapshot 
       }
     }
 
-    // ── Gate ticket abierto (2026-06-28): un caso con ticket asociado NO puede
-    //    pasar a un estado terminal (CERRADO / FALSO_POSITIVO) mientras el ticket
-    //    siga abierto. El plano comunicacional (tickets) cierra vía confirmación
-    //    del cliente ([[closure-confirmation-signoff]]); cerrar el caso antes
-    //    dejaría al cliente con un ticket huérfano. No aplica a reaperturas.
-    if (TERMINAL.has(status) && !TERMINAL.has(currentStatus)) {
-      let openTickets = [];
-      try {
-        openTickets = await getOpenTicketsForCase(id);
-      } catch (e) {
-        logger.warn("incidents.status.open_tickets_check_failed", { caseId: id, err: e?.message });
-      }
-      if (openTickets.length > 0) {
-        return res.status(409).json({
-          error:
-            `No se puede cerrar el caso: tiene ${openTickets.length} ticket(s) `
-            + `sin cerrar. Cerrá primero el/los ticket(s) asociado(s) y reintentá.`,
-          code: "CASE_HAS_OPEN_TICKETS",
-          openTickets: openTickets.map((t) => ({
-            ref: t.public_ref, subject: t.subject, status: t.status, linkType: t.link_type,
-          })),
-        });
-      }
-    }
-
     // 1. PostgreSQL primero
     try {
       const detail = reason ? `${status}: ${reason}` : status;
@@ -7704,6 +7678,24 @@ function mapCaseRow(r, pgRow) {
         } catch { return {}; }
       })(),
     },
+    governanceContext: (() => {
+      const sl = String(r.source_log ?? "");
+      if (!["software_governance", "noc_inventory_governance", "noc_down"].includes(sl)) return null;
+      const rawEd = pgRow?.enrichment_data;
+      const ed = !rawEd
+        ? {}
+        : typeof rawEd === "string"
+          ? (() => { try { return JSON.parse(rawEd); } catch { return {}; } })()
+          : rawEd;
+      const payload = ed.payload ?? ed;
+      return {
+        sourceLog: sl,
+        incidentType: ed.incident_type ?? null,
+        nocDeviceId: ed.noc_device_id ?? ed.node_id ?? payload?.noc_device_id ?? null,
+        payload,
+        autoOpened: Boolean(ed.auto_opened),
+      };
+    })(),
   };
 }
 

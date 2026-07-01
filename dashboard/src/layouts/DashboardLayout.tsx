@@ -2,8 +2,6 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Outlet, useLocation } from "react-router-dom";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { IpInvestigationSheet } from "@/components/threat/IpInvestigationSheet";
-import { TicketAssistant } from "@/components/tickets/TicketAssistant";
-import { FEATURE_TICKET_ASSISTANT } from "@/lib/feature-flags";
 
 export function DashboardLayout() {
   const location = useLocation();
@@ -20,7 +18,6 @@ export function DashboardLayout() {
   return (
     <div className="obser-shell flex min-h-dvh w-full flex-col">
       <IpInvestigationSheet />
-      {FEATURE_TICKET_ASSISTANT && <TicketAssistant />}
 
       <AppHeader />
 

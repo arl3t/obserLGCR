@@ -5,13 +5,11 @@ import {
   ClipboardList,
   ShieldAlert,
   ShieldCheck,
-  Ticket,
   Settings,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { ObserLogo } from "@/components/layout/ObserLogo";
 import { SystemHealthButton } from "@/components/layout/SystemHealthButton";
-import { TicketNotificationButton } from "@/components/layout/TicketNotificationButton";
 import { UserMenu } from "@/components/layout/UserMenu";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,7 +33,6 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/detection", label: "Detección", icon: ShieldAlert },
   { to: "/soc", label: "SOC", icon: ClipboardList },
   { to: "/gestion", label: "Incidentes", icon: ShieldCheck },
-  { to: "/tickets", label: "Tickets", icon: Ticket },
   { to: "/admin/settings", label: "Config", icon: Settings },
 ];
 
@@ -69,7 +66,6 @@ export function AppHeader() {
 
         <div className="flex flex-1 items-center justify-end gap-2 md:flex-none">
           <SystemHealthButton />
-          <TicketNotificationButton />
           <UserMenu />
 
           <div className="md:hidden">

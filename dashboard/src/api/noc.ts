@@ -47,6 +47,7 @@ export interface NocDeviceDetail extends NocDevice {
   ssh_host: string | null;
   ssh_port: number;
   ssh_user: string | null;
+  inventory_ack_by?: string | null;
 }
 
 export async function fetchNocDevices(): Promise<NocDevice[]> {
@@ -71,6 +72,16 @@ export async function fetchNocDevice(id: string): Promise<NocDeviceDetail> {
   );
   const row = data.data ?? data.device;
   if (!row) throw new Error("Dispositivo no encontrado");
+  return row;
+}
+
+export async function acknowledgeNocInventory(deviceId: string, notes?: string): Promise<NocDeviceDetail> {
+  const { data } = await api.post<{ data?: NocDeviceDetail; device?: NocDeviceDetail }>(
+    `/api/noc/devices/${deviceId}/inventory-ack`,
+    notes ? { notes } : {},
+  );
+  const row = data.data ?? data.device;
+  if (!row) throw new Error("Error al reconocer activo");
   return row;
 }
 

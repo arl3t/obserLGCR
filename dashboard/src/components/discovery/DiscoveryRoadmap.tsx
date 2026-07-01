@@ -3,7 +3,7 @@ export const DISCOVERY_ROADMAP = [
   { id: 2, title: "Comparación delta", desc: "Diff entre escaneos consecutivos: hosts/puertos nuevos, desaparecidos o cambiados." },
   { id: 3, title: "Alertas puertos críticos", desc: "Notificar 3389, 445, 23, 161 expuestos en segmentos no autorizados." },
   { id: 4, title: "Baseline por segmento", desc: "Política de servicios permitidos por VLAN/región con desviaciones automáticas." },
-  { id: 5, title: "Shadow IT", desc: "Detectar activos no inventariados vs CMDB/IPAM y abrir ticket automático." },
+  { id: 5, title: "Shadow IT", desc: "Detectar activos no inventariados vs CMDB/IPAM y abrir caso de gobernanza." },
   { id: 6, title: "Correlación CMDB", desc: "Enriquecer hosts con owner, criticidad y ventana de mantenimiento desde ServiceNow." },
   { id: 7, title: "Escaneo autenticado", desc: "Scripts NSE con credenciales vault (SSH/WinRM/SMB) para inventario profundo." },
   { id: 8, title: "IPv6 dual-stack", desc: "Descubrimiento y escaneo de redes ULA/global IPv6 en paralelo a RFC 1918." },

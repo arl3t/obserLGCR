@@ -18,6 +18,11 @@ import {
   insertSystemLog,
 } from "../services/nocTimescale.mjs";
 import { processIncidentsQueueBatch } from "../services/governanceIncidentWorker.mjs";
+import {
+  acknowledgeInventoryDevice,
+  enqueueUnknownAssetIncident,
+  scanUnacknowledgedAssets,
+} from "../services/nocAssetGovernance.mjs";
 import { exportNocLake } from "../services/nocLakeExportService.mjs";
 import { ingestSnmpTelegrafBatch } from "../services/snmpIngestService.mjs";
 import {
@@ -37,6 +42,8 @@ const DEVICES_LIST_SQL = `
     d.cpu_threshold_pct, d.mem_threshold_pct, d.rtt_threshold_ms,
     d.status, d.last_seen_at, d.ssh_host, d.ssh_port, d.ssh_user,
     d.agent_version, d.created_at, d.updated_at,
+    d.inventory_ack, d.inventory_ack_at, d.inventory_ack_by,
+    d.discovered_via,
     m_cpu.value::float  AS cpu_pct,
     m_mem.value::float  AS mem_pct,
     m_rtt.value::float  AS rtt_ms,
@@ -163,8 +170,8 @@ export default function nocRouter() {
 
       if (!devId) {
         const inserted = await pgQuery(
-          `INSERT INTO noc_devices (hostname, ip_address, mac_address, agent_version, site, status, last_seen_at)
-           VALUES ($1, $2::inet, $3, $4, $5, 'online', NOW())
+          `INSERT INTO noc_devices (hostname, ip_address, mac_address, agent_version, site, status, last_seen_at, discovered_via)
+           VALUES ($1, $2::inet, $3, $4, $5, 'online', NOW(), 'agent')
            ON CONFLICT (hostname) DO UPDATE SET
              ip_address    = COALESCE(EXCLUDED.ip_address, noc_devices.ip_address),
              mac_address   = COALESCE(EXCLUDED.mac_address, noc_devices.mac_address),
@@ -172,11 +179,14 @@ export default function nocRouter() {
              site          = COALESCE(EXCLUDED.site, noc_devices.site),
              status        = 'online',
              last_seen_at  = NOW()
-           RETURNING id, site`,
+           RETURNING id, site, (xmax = 0) AS is_insert`,
           [hostname, ip_address ?? null, mac_address ?? null, agent_version ?? null, site ?? null],
         );
         devId = inserted[0].id;
         deviceSite = inserted[0].site ?? deviceSite;
+        if (inserted[0].is_insert) {
+          void enqueueUnknownAssetIncident({ id: devId }, "agent").catch(() => {});
+        }
       }
 
       await pgQuery(
@@ -360,8 +370,10 @@ export default function nocRouter() {
         `INSERT INTO noc_devices
            (hostname, ip_address, mac_address, device_type, site, description,
             heartbeat_timeout_secs, cpu_threshold_pct, mem_threshold_pct, rtt_threshold_ms,
-            ssh_host, ssh_port, ssh_user)
-         VALUES ($1,$2::inet,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+            ssh_host, ssh_port, ssh_user,
+            inventory_ack, inventory_ack_at, inventory_ack_by, discovered_via)
+         VALUES ($1,$2::inet,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+                 TRUE, NOW(), 'manual-registration', 'manual')
          RETURNING *`,
         [
           hostname,
@@ -515,6 +527,22 @@ export default function nocRouter() {
     }
   });
 
+  router.post("/devices/:id/inventory-ack", async (req, res) => {
+    try {
+      const notes = req.body?.notes ?? null;
+      const actor = req.user?.preferred_username ?? req.user?.email ?? req.body?.ack_by ?? "operator";
+      const dev = await acknowledgeInventoryDevice(req.params.id, actor, notes);
+      if (!dev) {
+        return res.status(404).json({ success: false, error: "Dispositivo no encontrado." });
+      }
+      void syncAssetRegistryFromNoc(dev.ip_address ?? null);
+      return res.json({ success: true, data: dev, device: dev });
+    } catch (err) {
+      logger.error("noc_inventory_ack", { msg: err.message });
+      return res.status(500).json({ success: false, error: "Error interno del servidor." });
+    }
+  });
+
   router.delete("/devices/:id", async (req, res) => {
     try {
       const [dev] = await pgQuery(
@@ -661,6 +689,15 @@ export default function nocRouter() {
   router.get("/cron/governance-worker", requireCronSecret, async (_req, res) => {
     try {
       const result = await processIncidentsQueueBatch();
+      return res.json({ ok: true, ...result });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  router.get("/cron/inventory-governance", requireCronSecret, async (_req, res) => {
+    try {
+      const result = await scanUnacknowledgedAssets();
       return res.json({ ok: true, ...result });
     } catch (err) {
       return res.status(500).json({ ok: false, error: err.message });

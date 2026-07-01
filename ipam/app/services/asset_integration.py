@@ -4,6 +4,7 @@ Integración post-descubrimiento: NOC stubs, enriquecimiento, link IPAM↔NOC (I
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import UTC, datetime
@@ -68,6 +69,7 @@ def ensure_noc_stubs_from_nmap_hosts(
     """Crea noc_devices mínimos para hosts descubiertos que aún no existen."""
     created = 0
     parsed_by_ip = parsed_by_ip or {}
+    new_device_ids: list[str] = []
 
     for host in hosts:
         parsed = parsed_by_ip.get(host.ip)
@@ -91,14 +93,15 @@ def ensure_noc_stubs_from_nmap_hosts(
 
         for attempt, hn in enumerate((hostname, f"{hostname}-{host.ip.split('.')[-1]}")):
             try:
-                db.execute(
+                row = db.execute(
                     text(
                         """
                         INSERT INTO noc_devices
-                          (hostname, ip_address, mac_address, device_type, description, status)
+                          (hostname, ip_address, mac_address, device_type, description, status, discovered_via, inventory_ack)
                         VALUES
                           (:hostname, CAST(:ip AS inet), :mac, :device_type,
-                           'Auto-descubierto vía nmap', 'unknown')
+                           'Auto-descubierto vía nmap', 'unknown', 'nmap', FALSE)
+                        RETURNING id::text
                         """,
                     ),
                     {
@@ -107,7 +110,9 @@ def ensure_noc_stubs_from_nmap_hosts(
                         "mac": mac,
                         "device_type": device_type,
                     },
-                )
+                ).first()
+                if row:
+                    new_device_ids.append(row[0])
                 created += 1
                 break
             except IntegrityError:
@@ -118,7 +123,79 @@ def ensure_noc_stubs_from_nmap_hosts(
 
     if created:
         db.commit()
+        enqueue_unknown_asset_incidents(db, device_ids=new_device_ids, source="nmap")
     return created
+
+
+def enqueue_unknown_asset_incidents(
+    db: Session,
+    *,
+    device_ids: list[str] | None = None,
+    ip_addresses: list[str] | None = None,
+    source: str = "nmap",
+) -> int:
+    """Encola incidentes de activo desconocido para dispositivos NOC sin ACK."""
+    if device_ids:
+        rows = db.execute(
+            text(
+                """
+                SELECT id::text, hostname, ip_address::text AS ip
+                  FROM noc_devices
+                 WHERE id = ANY(CAST(:ids AS uuid[]))
+                   AND inventory_ack IS FALSE
+                """,
+            ),
+            {"ids": device_ids},
+        ).fetchall()
+    elif ip_addresses:
+        rows = db.execute(
+            text(
+                """
+                SELECT id::text, hostname, ip_address::text AS ip
+                  FROM noc_devices
+                 WHERE ip_address = ANY(CAST(:ips AS inet[]))
+                   AND inventory_ack IS FALSE
+                """,
+            ),
+            {"ips": ip_addresses},
+        ).fetchall()
+    else:
+        return 0
+
+    enqueued = 0
+    for row in rows:
+        dedup = hashlib.sha256(f"{row[0]}|unknown_asset".encode()).hexdigest()
+        payload = json.dumps(
+            {
+                "noc_device_id": row[0],
+                "ip_address": row[2],
+                "hostname": row[1],
+                "discovered_via": source,
+                "policy": "inventory_ack_required",
+            },
+        )
+        ins = db.execute(
+            text(
+                """
+                INSERT INTO incidents_queue (
+                  incident_type, severity, node_id, hostname, dedup_key, payload, status
+                ) VALUES (
+                  'unknown_asset', 'HIGH', CAST(:id AS uuid), :hostname, :dedup,
+                  CAST(:payload AS jsonb), 'pending'
+                )
+                ON CONFLICT (dedup_key) WHERE (status = 'pending') DO NOTHING
+                RETURNING id
+                """,
+            ),
+            {"id": row[0], "hostname": row[1], "dedup": dedup, "payload": payload},
+        ).first()
+        if ins:
+            enqueued += 1
+
+    if enqueued:
+        db.commit()
+        logger.info("unknown_asset_enqueued count=%s source=%s", enqueued, source)
+    return enqueued
 
 
 def enrich_noc_from_parsed_hosts(
@@ -281,12 +358,14 @@ def post_subnet_nmap_pipeline(
     linked = auto_link_subnet(db, subnet_id)
     ips = [h.ip for h in hosts]
     registry = sync_asset_registry_from_noc(db, ip_addresses=ips) if ips else 0
+    incidents = enqueue_unknown_asset_incidents(db, ip_addresses=ips, source="nmap") if ips else 0
 
     return {
         "noc_stubs_created": stubs,
         "noc_enriched": enriched,
         "noc_linked": linked,
         "registry_synced": registry,
+        "unknown_asset_incidents": incidents,
     }
 
 

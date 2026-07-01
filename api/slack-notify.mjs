@@ -614,7 +614,7 @@ export function buildIncidentBulkAdoptionBlock(opts) {
           {
             type: "button",
             text: { type: "plain_text", text: "🔍 Clasificación →", emoji: true },
-            url: `${dashUrl()}/incident-classification`,
+            url: `${dashUrl()}/detection?tab=clasificacion`,
           },
         ],
       },

@@ -16,6 +16,9 @@ export interface UnifiedAsset {
   os_guess: string | null;
   discovery_documented: boolean | null;
   discovery_open_ports: number;
+  inventory_ack: boolean | null;
+  inventory_ack_at: string | null;
+  discovered_via: string | null;
   discovery_meta: Record<string, unknown> | null;
   criticality: string | null;
   registry_type: string | null;

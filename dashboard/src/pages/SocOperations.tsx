@@ -1,12 +1,11 @@
 import { lazy, Suspense } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// obserLGCR (fork demo): recortado a los dos módulos exportados de esta sección.
-const EnrichedScorePage          = lazy(() => import("./EnrichedScore").then((m) => ({ default: m.EnrichedScorePage })));
-const IncidentClassificationPage = lazy(() => import("./IncidentClassification").then((m) => ({ default: m.IncidentClassificationPage })));
+const EnrichedScorePage = lazy(() =>
+  import("./EnrichedScore").then((m) => ({ default: m.EnrichedScorePage })),
+);
 
 function TabFallback() {
   return (
@@ -19,31 +18,19 @@ function TabFallback() {
 }
 
 export function SocOperationsPage() {
-  const [params, setParams] = useSearchParams();
-  const tab = params.get("tab") ?? "score";
+  const [params] = useSearchParams();
+  const tab = params.get("tab");
+
+  if (tab === "clasificacion") {
+    return <Navigate to="/detection?tab=clasificacion" replace />;
+  }
 
   return (
     <>
-      <PageHeader
-        title="SOC"
-        subtitle="Score IOC enriquecido y clasificación de incidentes"
-      />
-      <Tabs
-      value={tab}
-      onValueChange={(v) => setParams({ tab: v }, { replace: true })}
-      className="flex flex-col"
-    >
-      <div className="overflow-x-auto scrollbar-none border-b px-6 pt-4">
-        <TabsList className="min-w-max">
-          <TabsTrigger value="score">Score IOC</TabsTrigger>
-          <TabsTrigger value="clasificacion">Clasificación</TabsTrigger>
-        </TabsList>
-      </div>
+      <PageHeader title="SOC" subtitle="Score IOC enriquecido" />
       <Suspense fallback={<TabFallback />}>
-        <TabsContent value="score"         className="m-0"><EnrichedScorePage /></TabsContent>
-        <TabsContent value="clasificacion" className="m-0"><IncidentClassificationPage /></TabsContent>
+        <EnrichedScorePage />
       </Suspense>
-    </Tabs>
     </>
   );
 }

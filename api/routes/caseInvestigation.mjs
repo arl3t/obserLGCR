@@ -19,9 +19,6 @@ import {
   addTimelineEvent, getTimeline, syncLegacyTimeline,
 } from "../services/timelineService.mjs";
 import { enrichIoc } from "../services/enrichmentService.mjs";
-import {
-  addMessage, getPrimaryTicketForCase, ensurePrimaryCaseLink,
-} from "../services/ticketService.mjs";
 import { computeIocVerdict } from "../services/iocVerdict.mjs";
 import { classifyEcsirt, ECSIRT_CLASSES } from "../services/ecsirtClassify.mjs";
 import { parseCaseNumber } from "../services/caseNumber.mjs";
@@ -1329,47 +1326,6 @@ export default function caseInvestigationRouter(runQuery) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  // ── POST /:id/send-report-to-ticket — adjunta el informe (HTML) a un ticket ───
-  // "Enviar informe" SOLO adjunta a un ticket EXISTENTE; NUNCA abre uno. Si el caso
-  // no tiene ticket, el analista debe abrirlo primero con "Solicitar al cliente".
-  // Lo envía como mensaje PÚBLICO del SOC; el cliente lo abre en un modal del portal.
-  r.post("/:id/send-report-to-ticket", async (req, res) => {
-    try {
-      const caseId = req.params.id;
-      const operatorCi = (await resolveJwtOperatorCi(req)) || req.user?.preferred_username || "system";
-
-      // El ticket destino debe existir: el explícito (UI de Tickets) o el PRIMARY del caso.
-      const ticketId = req.body?.ticketId || await getPrimaryTicketForCase(caseId);
-      if (!ticketId) {
-        return res.status(409).json({
-          ok: false,
-          error: "El caso no tiene un ticket asociado. Abrí uno primero con «Solicitar al cliente»; «Enviar informe» solo adjunta el informe a un ticket existente.",
-        });
-      }
-
-      const [caseRows, tasks, assets, iocs, evidences, timeline] = await Promise.all([
-        pgQuery(`SELECT * FROM incident_cases_pg WHERE id=$1 LIMIT 1`, [caseId]),
-        pgQuery(`SELECT * FROM case_tasks     WHERE case_id=$1 ORDER BY sort_order`, [caseId]),
-        pgQuery(`SELECT * FROM case_assets    WHERE case_id=$1 ORDER BY created_at`, [caseId]),
-        pgQuery(`SELECT * FROM case_iocs      WHERE case_id=$1 ORDER BY is_primary DESC`, [caseId]),
-        pgQuery(`SELECT * FROM case_evidences WHERE case_id=$1 ORDER BY collected_at`, [caseId]),
-        getTimeline(caseId),
-      ]);
-      if (!caseRows.length) return res.status(404).json({ ok: false, error: "Caso no encontrado" });
-      const c = caseRows[0];
-      const html = generateHtmlReport(c, { tasks, assets, iocs, evidences, timeline });
-
-      // Auto-vínculo: asegurar que el caso quede ligado al ticket (idempotente).
-      await ensurePrimaryCaseLink(ticketId, caseId, operatorCi);
-      await addMessage(ticketId, {
-        authorType: "SOC", authorRef: operatorCi, visibility: "PUBLIC",
-        body: req.body?.note?.trim() || "Adjuntamos el informe del incidente.",
-        reportHtml: html, operatorCi,
-      });
-      res.status(201).json({ ok: true, ticketId });
-    } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
-  });
-
   // ── Helper: arma el documento playbook (consulta KB → reutiliza o genera) ─────
   // forceNew=true ignora la base de conocimiento y siempre genera + persiste uno
   // nuevo. Devuelve { html, md, title, source, reused, kbSlug }.
@@ -1403,36 +1359,6 @@ export default function caseInvestigationRouter(runQuery) {
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.send(doc.html);
     } catch (err) { res.status(err.status || 500).json({ ok: false, error: err.message }); }
-  });
-
-  // ── POST /:id/send-playbook-to-ticket — adjunta el playbook (HTML) a un ticket ─
-  // Espejo de send-report-to-ticket. Consulta la base de conocimiento: si ya hay
-  // un playbook reutilizable para este tipo de caso, REENVÍA el existente (sin
-  // re-llamar al LLM); si no, lo genera (analista LLM + fallback rule-based),
-  // lo persiste en case_playbooks y lo publica en la KB. forceNew=true fuerza uno nuevo.
-  r.post("/:id/send-playbook-to-ticket", async (req, res) => {
-    try {
-      const caseId = req.params.id;
-      const operatorCi = (await resolveJwtOperatorCi(req)) || req.user?.preferred_username || "system";
-
-      const ticketId = req.body?.ticketId || await getPrimaryTicketForCase(caseId);
-      if (!ticketId) {
-        return res.status(409).json({
-          ok: false,
-          error: "El caso no tiene un ticket asociado. Abrí uno primero con «Solicitar al cliente»; «Enviar playbook» solo adjunta a un ticket existente.",
-        });
-      }
-
-      const doc = await resolvePlaybookDoc(caseId, { forceNew: req.body?.forceNew === true, operatorCi });
-
-      await ensurePrimaryCaseLink(ticketId, caseId, operatorCi);
-      await addMessage(ticketId, {
-        authorType: "SOC", authorRef: operatorCi, visibility: "PUBLIC",
-        body: req.body?.note?.trim() || "Adjuntamos el playbook de respuesta para este incidente.",
-        playbookHtml: doc.html, operatorCi,
-      });
-      res.status(201).json({ ok: true, ticketId, source: doc.source, reused: doc.reused, kbSlug: doc.kbSlug });
-    } catch (err) { res.status(err.status || 400).json({ ok: false, error: err.message }); }
   });
 
   // ── POST /:id/enrich-now — Manual IOC enrichment refresh ──────────────────

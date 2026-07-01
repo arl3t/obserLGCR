@@ -5,8 +5,6 @@ import { DashboardLayout } from "@/layouts/DashboardLayout";
 import { DetectionCenterPage } from "@/pages/DetectionCenter";
 import { SocOperationsPage } from "@/pages/SocOperations";
 import { IncidentManagementPage } from "@/pages/IncidentManagement";
-import { TicketsPage } from "@/pages/TicketsPage";
-import { TicketSettingsPage } from "@/pages/TicketSettingsPage";
 import { PlatformSettingsPage } from "@/pages/PlatformSettingsPage";
 import { NocPage, NocDeviceDetailPage } from "@/pages/NocPage";
 import { NocConfigPage } from "@/pages/NocConfigPage";
@@ -39,15 +37,13 @@ export const router = createBrowserRouter([
           { path: "detection", element: <DetectionCenterPage />, loader: () => null },
           { path: "soc", element: <SocOperationsPage />, loader: () => null },
           { path: "gestion", element: <IncidentManagementPage />, loader: () => null },
-          { path: "tickets", element: <TicketsPage />, loader: () => null },
           { path: "admin/settings", element: <PlatformSettingsPage />, loader: () => null },
-          { path: "admin/tickets-config", element: <TicketSettingsPage />, loader: () => null },
           { path: "noc", element: <NocPage />, loader: () => null },
           { path: "noc/config", element: <NocConfigPage />, loader: () => null },
           { path: "noc/:id", element: <NocDeviceDetailPage />, loader: () => null },
           { path: "incident-management", element: <Navigate to="/gestion" replace /> },
           { path: "enriched-score", element: <Navigate to="/soc?tab=score" replace /> },
-          { path: "incident-classification", element: <Navigate to="/soc?tab=clasificacion" replace /> },
+          { path: "incident-classification", element: <Navigate to="/detection?tab=clasificacion" replace /> },
         ],
       },
     ],

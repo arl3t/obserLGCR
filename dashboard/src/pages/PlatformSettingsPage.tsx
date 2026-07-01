@@ -1,5 +1,4 @@
 import { FormEvent, useState } from "react";
-import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Plus, Shield, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -14,7 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { OrganizationsAdmin } from "@/components/settings/OrganizationsAdmin";
 import { SnmpSettingsSection } from "@/components/settings/SnmpSettingsSection";
 import { cn } from "@/lib/utils";
 
@@ -87,14 +85,7 @@ export function PlatformSettingsPage() {
     <div className="mx-auto max-w-3xl space-y-8">
       <PageHeader
         title="Configuración"
-        subtitle={
-          <>
-            Cuenta de {displayName ?? email ?? "usuario"} ·{" "}
-            <Link to="/admin/tickets-config" className="text-primary hover:underline">
-              Config. tickets
-            </Link>
-          </>
-        }
+        subtitle={`Cuenta de ${displayName ?? email ?? "usuario"}`}
       />
 
       {/* Cambiar contraseña */}
@@ -277,8 +268,6 @@ export function PlatformSettingsPage() {
       )}
 
       {isAdmin && <SnmpSettingsSection />}
-
-      {isAdmin && <OrganizationsAdmin />}
     </div>
   );
 }

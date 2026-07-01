@@ -3,7 +3,6 @@
  *
  * Monta SOLO los módulos exportados al fork:
  *   · Gestión de incidentes      → /api/incidents   (sin la sección de investigación)
- *   · Tickets                     → /api/tickets
  *   · Score IOC / Clasificación   → vía /api/incidents + /api/scoring-profiles
  *   · Registro de activos         → /api/assets
  *   · NOC (monitoreo infra)       → /api/noc
@@ -30,8 +29,6 @@ import { initSocketIo, getIo } from "./services/socketService.mjs";
 
 // ── Routers de los módulos exportados ─────────────────────────────────────────
 import incidentsRouter from "./routes/incidents.mjs";
-import ticketsRouter from "./routes/tickets.mjs";
-import ticketIntegrationsRouter from "./routes/ticketIntegrations.mjs";
 import scoringProfilesRouter from "./routes/scoringProfiles.mjs";
 import operatorsRouter from "./routes/operators.mjs";
 import { assetRegistryRouter } from "./routes/assetRegistry.mjs";
@@ -42,6 +39,7 @@ import detectionRouter, { detectionIngestRouter } from "./routes/detection.mjs";
 import { runNocHeartbeatWatcher } from "./services/nocHeartbeatWatcher.mjs";
 import { primeCatalogCache } from "./services/sourceLogCatalog.mjs";
 import { startGovernanceIncidentWorker } from "./services/governanceIncidentWorker.mjs";
+import { startInventoryGovernanceWatcher } from "./services/nocAssetGovernance.mjs";
 import { isTimescaleAvailable } from "./services/nocTimescale.mjs";
 import inventoryRouter from "./routes/inventory.mjs";
 import { ipamProxyMiddleware } from "./middleware/ipamProxy.mjs";
@@ -113,10 +111,6 @@ app.get("/api/health", (_req, res) => {
 // Gestión de incidentes — SIN la sección de investigación (/api/cases no se monta).
 app.use("/api/incidents", requireAuth(), incidentsRouter(runTrinoStub, getIo));
 
-// Tickets
-app.use("/api/tickets", requireAuth(), ticketsRouter(getIo));
-app.use("/api/integrations", requireAuth(), ticketIntegrationsRouter());
-
 // Score IOC — perfiles de scoring (config) + operadores (nombres de asignación)
 app.use("/api/scoring-profiles", scoringProfilesRouter);
 app.use("/api/operators", operatorsRouter);
@@ -171,6 +165,7 @@ httpServer.listen(PORT, async () => {
   }
 
   startGovernanceIncidentWorker();
+  startInventoryGovernanceWatcher();
 
   // Heartbeat watcher NOC — evalúa dispositivos sin señal cada 30s
   const nocWatcherMs = parseInt(process.env.NOC_WATCHER_INTERVAL_MS ?? "30000", 10);

@@ -19,6 +19,9 @@ class UnifiedAssetResponse(BaseModel):
     os_guess: str | None = None
     discovery_documented: bool | None = None
     discovery_open_ports: int = 0
+    inventory_ack: bool | None = None
+    inventory_ack_at: str | None = None
+    discovered_via: str | None = None
     discovery_meta: dict | None = None
     criticality: str | None = None
     registry_type: str | None = None

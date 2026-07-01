@@ -151,6 +151,12 @@ export function DetectionUnifiedAssetsPage() {
                       <p className="text-[10px] text-muted-foreground">
                         {a.discovery_open_ports > 0 ? `${a.discovery_open_ports} puertos` : "sin puertos"}
                         {a.discovery_documented ? " · doc" : ""}
+                        {a.inventory_ack === false && (
+                          <span className="text-amber-400"> · sin ACK</span>
+                        )}
+                        {a.inventory_ack === true && (
+                          <span className="text-emerald-400"> · ACK</span>
+                        )}
                       </p>
                     </td>
                     <td className="px-3 py-2">

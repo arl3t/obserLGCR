@@ -352,6 +352,35 @@ def update_host(db: Session, host: NetworkDiscoveryHost, data: dict, actor: str)
         if data["documented"]:
             host.documented_at = datetime.now(UTC)
             host.documented_by = actor
+            db.execute(
+                text(
+                    """
+                    UPDATE noc_devices
+                       SET inventory_ack = TRUE,
+                           inventory_ack_at = NOW(),
+                           inventory_ack_by = :actor,
+                           inventory_ack_notes = COALESCE(inventory_ack_notes, 'Reconocido vía descubrimiento')
+                     WHERE ip_address = :ip
+                       AND inventory_ack IS FALSE
+                    """,
+                ),
+                {"actor": actor, "ip": str(host.ip_address)},
+            )
+            db.execute(
+                text(
+                    """
+                    UPDATE incidents_queue
+                       SET status = 'suppressed', processed_at = NOW(),
+                           error_message = 'Activo documentado en descubrimiento'
+                     WHERE incident_type IN ('unknown_asset', 'undocumented_host')
+                       AND status = 'pending'
+                       AND node_id IN (
+                         SELECT id FROM noc_devices WHERE ip_address = :ip
+                       )
+                    """,
+                ),
+                {"ip": str(host.ip_address)},
+            )
         else:
             host.documented_at = None
             host.documented_by = None

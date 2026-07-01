@@ -986,9 +986,6 @@ export function CaseManagementDashboard() {
     errorMessage,
     refetch,
     adoptCase,
-    changeStatus,
-    notifySlack,
-    escalateCase,
     facets,
   } = useCaseManagement({
     severity: sevFilter,
@@ -2985,12 +2982,7 @@ export function CaseManagementDashboard() {
         <CaseDetailSheet
           case={selectedCase}
           onClose={() => setSelectedCase(null)}
-          onAdopt={(ci, force) => adoptCase(selectedCase.id, ci, force ?? false)}
-          onChangeStatus={(status, reason, ci, classification) => changeStatus(selectedCase.id, status, reason, ci, classification)}
-          onNotifySlack={(reason) => notifySlack(selectedCase.id, reason)}
-          onEscalate={(level, escalatedTo, reason, ci) =>
-            escalateCase(selectedCase.id, level, escalatedTo, reason, ci)
-          }
+          onAcknowledged={() => void refetch()}
         />
       )}
 

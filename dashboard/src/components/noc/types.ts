@@ -11,6 +11,9 @@ export interface NocDevice {
   rtt_ms: number | null;
   open_alerts: number;
   heartbeat_timeout_secs: number;
+  inventory_ack?: boolean;
+  inventory_ack_at?: string | null;
+  discovered_via?: string | null;
 }
 
 export interface NocAlert {

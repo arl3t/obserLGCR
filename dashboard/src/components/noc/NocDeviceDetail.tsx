@@ -13,6 +13,7 @@ import {
 import { DeviceNetworkIdentity } from "@/components/noc/DeviceNetworkIdentity";
 import { DeviceOperationsPanel } from "@/components/noc/DeviceOperationsPanel";
 import { DeviceSoftwarePanel } from "@/components/noc/asset/DeviceSoftwarePanel";
+import { DeviceInventoryAckPanel } from "@/components/noc/DeviceInventoryAckPanel";
 import { DeviceThresholdsPanel } from "@/components/noc/DeviceThresholdsPanel";
 import { DeviceUptimeMonitor } from "./uptime/DeviceUptimeMonitor";
 import type { MetricPoint } from "./uptime/helpers";
@@ -200,6 +201,7 @@ export function NocDeviceDetail() {
 
       {tab === "inventario" && (
         <div className="space-y-4">
+          <DeviceInventoryAckPanel device={device} onAcknowledged={() => void load(true)} />
           <DeviceNetworkIdentity
             nocDeviceId={device.id}
             hostname={device.hostname}

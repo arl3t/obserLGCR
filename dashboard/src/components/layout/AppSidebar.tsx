@@ -9,7 +9,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sun,
-  Ticket,
   User,
   Zap,
   Radio,
@@ -41,11 +40,9 @@ type NavItem = {
 // obserLGCR (fork demo): navegación recortada a los módulos exportados.
 const navItems: NavItem[] = [
   { to: "/detection",         label: "Detección",             icon: ShieldAlert, end: true },
-  { to: "/soc",               label: "Score IOC / Clasificación", icon: ClipboardList },
+  { to: "/soc",               label: "Score IOC",             icon: ClipboardList },
   { to: "/gestion",           label: "Gestión de incidentes", icon: ShieldCheck },
   { to: "/noc",               label: "NOC · Monitoreo",       icon: Radio, end: true },
-  { to: "/tickets",           label: "Tickets",               icon: Ticket },
-  { to: "/admin/tickets-config", label: "Config. Tickets",    icon: Ticket },
 ];
 
 export function AppSidebar() {
