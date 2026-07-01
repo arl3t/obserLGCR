@@ -8,6 +8,8 @@ import { X, Shield, ShieldCheck, ChevronDown, Clock, ExternalLink } from "lucide
 import type { SocCase } from "./types";
 import { CaseGovernancePanel } from "./CaseGovernancePanel";
 import { CaseAckButton } from "./CaseAckButton";
+import { CaseCloseButton } from "./CaseCloseButton";
+import type { CaseClassification, CaseStatus } from "./types";
 import { api } from "@/api/client";
 import { C, alpha } from "@/lib/cm-theme";
 import { formatDateTimePy } from "@/lib/format";
@@ -98,9 +100,16 @@ interface Props {
   case:            SocCase;
   onClose:           () => void;
   onAcknowledged?:   () => void;
+  onCloseCase?:      (
+    caseId: string,
+    status: CaseStatus,
+    reason: string,
+    classification: CaseClassification | undefined,
+    lessonsLearned: string | undefined,
+  ) => Promise<void>;
 }
 
-export function CaseDetailSheet({ case: c, onClose, onAcknowledged }: Props) {
+export function CaseDetailSheet({ case: c, onClose, onAcknowledged, onCloseCase }: Props) {
   const [containBusy, setContainBusy] = useState(false);
   const [containMsg, setContainMsg]     = useState<string | null>(null);
 
@@ -184,6 +193,9 @@ export function CaseDetailSheet({ case: c, onClose, onAcknowledged }: Props) {
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {onCloseCase && (
+            <CaseCloseButton caseItem={c} compact onCloseCase={onCloseCase} />
+          )}
           <CaseAckButton caseItem={c} onAcknowledged={onAcknowledged} />
           <button
             onClick={onClose}

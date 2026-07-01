@@ -973,6 +973,7 @@ export function CaseManagementDashboard() {
     errorMessage,
     refetch,
     adoptCase,
+    changeStatus,
     facets,
   } = useCaseManagement({
     severity: sevFilter,
@@ -2956,6 +2957,11 @@ export function CaseManagementDashboard() {
           case={selectedCase}
           onClose={() => setSelectedCase(null)}
           onAcknowledged={() => void refetch()}
+          onCloseCase={async (caseId, status, reason, classification, lessonsLearned) => {
+            await changeStatus(caseId, status, reason, operatorCi ?? undefined, classification, lessonsLearned);
+            setSelectedCase(null);
+            void refetch();
+          }}
         />
       )}
 

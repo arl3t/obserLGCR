@@ -70,7 +70,7 @@ export interface UseCaseManagementResult {
   errorMessage:   string | null;
   refetch:        () => void;
   adoptCase:      (caseId: string, operatorCi: string, force?: boolean) => Promise<void>;
-  changeStatus:   (caseId: string, status: CaseStatus, reason?: string, operatorCi?: string, classification?: CaseClassification) => Promise<void>;
+  changeStatus:   (caseId: string, status: CaseStatus, reason?: string, operatorCi?: string, classification?: CaseClassification, lessonsLearned?: string) => Promise<void>;
   notifySlack:    (caseId: string, reason: "escalated" | "manual") => Promise<void>;
   escalateCase:   (caseId: string, level: string, escalatedTo: string, reason: string, operatorCi: string) => Promise<void>;
 }
@@ -329,6 +329,7 @@ export function useCaseManagement(filters: CaseFilters): UseCaseManagementResult
     reason?:    string,
     operatorCi?: string,
     classification?: CaseClassification,
+    lessonsLearned?: string,
   ): Promise<void> => {
     // R4: snapshot + optimistic update. Estados terminales también setean
     // resolvedAt para que las KPIs visibles (resolvedToday) y los filtros de
@@ -353,6 +354,7 @@ export function useCaseManagement(filters: CaseFilters): UseCaseManagementResult
       await api.patch(`/api/incidents/${caseId}/status`, {
         status, reason, operatorCi,
         ...(classification ? { classification } : {}),
+        ...(lessonsLearned ? { lessonsLearned } : {}),
       });
       // R-perf (2026-06-06): KPIs/investigación en segundo plano (ver adoptCase).
       await queryClient.invalidateQueries({ queryKey: [CASES_KEY] });
