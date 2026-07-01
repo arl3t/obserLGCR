@@ -10,6 +10,7 @@ from app.database import SessionLocal
 from app.models.discovery import NetworkDiscoveryJob
 from app.models.ipam import IPAMSubnet
 from app.services import discovery_service as discovery_svc
+from app.services.asset_integration import post_subnet_nmap_pipeline
 from app.services.ipam_nmap_sync import sync_nmap_discovery
 from app.services.nmap_discovery import is_nmap_available, run_nmap_host_discovery
 
@@ -28,6 +29,7 @@ def _run_subnet_scan(subnet_id: int) -> None:
         cidr = str(subnet.cidr_block)
         hosts, _ = run_nmap_host_discovery(cidr)
         sync_nmap_discovery(db, subnet, hosts)
+        post_subnet_nmap_pipeline(db, subnet_id, hosts)
         logger.info("cron_nmap_done subnet=%s hosts=%s", subnet_id, len(hosts))
     except Exception:
         logger.exception("cron_nmap_failed subnet=%s", subnet_id)

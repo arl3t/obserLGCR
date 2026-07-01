@@ -9,6 +9,7 @@ import { logger } from "../logger.mjs";
 import { runNocHeartbeatWatcher } from "../services/nocHeartbeatWatcher.mjs";
 import { openCaseFromNocAlert, syncNocDownIncidents } from "../services/nocIncidentBridge.mjs";
 import { verifyAgentToken } from "../services/agentAuth.mjs";
+import { syncAssetRegistryFromNoc } from "../services/assetRegistrySync.mjs";
 import {
   ingestHeartbeatTimescale,
   queryMetricSeries,
@@ -274,6 +275,8 @@ export default function nocRouter() {
         }).catch(() => {});
       }
 
+      void syncAssetRegistryFromNoc(ip_address ?? null);
+
       return res.json({ success: true, device_id: devId });
     } catch (err) {
       logger.error("noc_heartbeat_error", { msg: err.message });
@@ -378,6 +381,7 @@ export default function nocRouter() {
       );
 
       await syncSnmpTargetForDevice(row);
+      void syncAssetRegistryFromNoc(ip_address ?? null);
 
       return res.status(201).json({ success: true, data: row, device: row });
     } catch (err) {
@@ -503,6 +507,7 @@ export default function nocRouter() {
       if (!row) {
         return res.status(404).json({ success: false, error: "Dispositivo no encontrado." });
       }
+      void syncAssetRegistryFromNoc(row.ip_address ?? null);
       return res.json({ success: true, data: row, device: row });
     } catch (err) {
       logger.error("noc_device_patch", { msg: err.message });

@@ -7,7 +7,7 @@ from psycopg2.errors import UniqueViolation
 from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
-from app.routers import addresses, discovery, inventory, regions, subnets, tools
+from app.routers import addresses, discovery, inventory, regions, subnets, tools, unified_assets
 from app.services.nmap_discovery import is_nmap_available, is_nmap_runner_configured
 from app.services.nmap_runner_client import check_nmap_runner_health
 from app.services.scheduler import refresh_scan_jobs, start_scheduler, stop_scheduler
@@ -63,3 +63,4 @@ app.include_router(addresses.router, prefix="/api/v1/ipam")
 app.include_router(inventory.router, prefix="/api/v1/ipam")
 app.include_router(tools.router, prefix="/api/v1/ipam")
 app.include_router(discovery.router, prefix="/api/v1/ipam")
+app.include_router(unified_assets.router, prefix="/api/v1/ipam")

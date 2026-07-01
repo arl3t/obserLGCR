@@ -21,7 +21,7 @@ from app.services.alerts import maybe_fire_utilization_webhook
 from app.services.audit import audit_log
 from app.services.ipam_nmap_sync import assert_scan_size, sync_nmap_discovery
 from app.services.nmap_discovery import NmapNotAvailableError, NmapScanError, is_nmap_available, run_nmap_host_discovery
-from app.services.noc_link import auto_link_subnet
+from app.services.asset_integration import post_subnet_nmap_pipeline
 from app.services.overlap import check_cidr_overlap, vlan_cross_region_warnings
 from app.services.rfc1918 import parse_cidr
 from app.services.scheduler import refresh_scan_jobs
@@ -231,7 +231,8 @@ async def discover_subnet_nmap(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     counts = sync_nmap_discovery(db, subnet, hosts, mark_offline=opts.mark_offline, preserve_reserved=opts.preserve_reserved)
-    noc_linked = auto_link_subnet(db, subnet_id)
+    integration = post_subnet_nmap_pipeline(db, subnet_id, hosts)
+    noc_linked = integration.get("noc_linked", 0)
     audit_log(db, entity_type="subnet", entity_id=subnet_id, action="nmap_discover", actor=user.email, changes=counts)
     db.commit()
 

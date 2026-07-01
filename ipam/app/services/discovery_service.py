@@ -21,7 +21,8 @@ from app.models.discovery import (
     NetworkDiscoveryPort,
     NetworkDiscoveryRun,
 )
-from app.models.ipam import IPAMAddress, IPAMAddressStatus, IPAMSubnet
+from app.models.ipam import IPAMSubnet
+from app.services.asset_integration import post_discovery_ipam_pipeline
 from app.services.nmap_discovery import NmapHost, NmapScanError
 from app.services.nmap_scan_engine import ParsedHost, run_network_scan
 
@@ -181,8 +182,35 @@ def execute_run(run_id: int, *, custom_args: str | None = None, auto_sync_ipam: 
         stats = _compute_stats(hosts)
         _persist_hosts(db, run.id, hosts)
 
+        integration: dict[str, int] = {}
         if auto_sync_ipam and ipam_subnet_id:
             _sync_to_ipam(db, ipam_subnet_id, hosts)
+            integration = post_discovery_ipam_pipeline(db, ipam_subnet_id, hosts, run_id=run.id)
+        else:
+            from app.services.nmap_discovery import NmapHost
+
+            nmap_hosts = [
+                NmapHost(ip=h.ip, hostname=h.hostname, mac=h.mac)
+                for h in hosts
+                if h.status == "up"
+            ]
+            parsed_by_ip = {h.ip: h for h in hosts}
+            from app.services.asset_integration import (
+                ensure_noc_stubs_from_nmap_hosts,
+                enrich_noc_from_parsed_hosts,
+                sync_asset_registry_from_noc,
+            )
+
+            integration = {
+                "noc_stubs_created": ensure_noc_stubs_from_nmap_hosts(
+                    db, nmap_hosts, parsed_by_ip=parsed_by_ip,
+                ),
+                "noc_enriched": enrich_noc_from_parsed_hosts(db, hosts, run_id=run.id),
+                "noc_linked": 0,
+                "registry_synced": sync_asset_registry_from_noc(
+                    db, ip_addresses=[h.ip for h in nmap_hosts],
+                ),
+            }
 
         finished = datetime.now(UTC)
         run.status = "completed"
@@ -194,7 +222,7 @@ def execute_run(run_id: int, *, custom_args: str | None = None, auto_sync_ipam: 
         run.nmap_summary = summary
         run.nmap_command = command
         run.raw_xml = raw_xml
-        run.stats_json = stats
+        run.stats_json = {**stats, "integration": integration}
 
         if run.job_id:
             job = db.get(NetworkDiscoveryJob, run.job_id)
