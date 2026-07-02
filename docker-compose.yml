@@ -18,7 +18,7 @@ services:
     volumes:
       - obserlgcr-pgdata:/var/lib/postgresql/data
     ports:
-      - "${PG_PORT:-5432}:5432"
+      - "${PG_PORT:-5433}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-obserlgcr} -d ${PG_DATABASE:-obserlgcr}"]
       interval: 10s
