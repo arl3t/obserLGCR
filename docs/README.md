@@ -1,20 +1,20 @@
 # Documentación obserLGCR
 
-**obserLGCR** es un fork demo/laboratorio de [LegacyHunt](https://github.com/arl3t/obserLGCR), una plataforma SOC (Security Operations Center). Este fork incluye un subconjunto de módulos operativos y funciona **sin autenticación** por defecto.
+**obserLGCR** es un fork demo/laboratorio de LegacyHunt. Incluye NOC, centro de detección, gestión de incidentes y configuración de plataforma, sobre PostgreSQL/TimescaleDB.
 
 ## Índice
 
 | Documento | Descripción |
 |-----------|-------------|
-| [Instalación](instalacion.md) | Requisitos, arranque con Docker y verificación |
-| [Arquitectura](arquitectura.md) | Componentes, flujo de datos y decisiones de diseño |
-| [Módulos](modulos.md) | Detección, Score IOC, Clasificación, Gestión y Tickets |
-| [NOC](modulo-noc.md) | Monitoreo de infraestructura y agentes |
-| [API REST](api.md) | Endpoints activos en este fork |
-| [Configuración](configuracion.md) | Variables de entorno y personalización |
-| [Desarrollo](desarrollo.md) | Desarrollo local, estructura del código y migraciones |
-| [Estilo / UI](estilo.md) | Guía visual, design system y convenciones del dashboard |
-| [Seguridad](seguridad.md) | Modo lab, activación de OIDC/Keycloak y buenas prácticas |
+| [Instalación](instalacion.md) | Requisitos, Docker, login y verificación |
+| [Arquitectura](arquitectura.md) | Componentes y flujo de datos |
+| [Módulos](modulos.md) | NOC, Detección, Gestión y Config |
+| [NOC](modulo-noc.md) | Monitoreo de infraestructura |
+| [API REST](api.md) | Endpoints montados en este fork |
+| [Configuración](configuracion.md) | Variables de entorno |
+| [Desarrollo](desarrollo.md) | Desarrollo local y migraciones |
+| [Estilo / UI](estilo.md) | Design system del dashboard |
+| [Seguridad](seguridad.md) | Auth local, OIDC y producción |
 
 ## Inicio rápido
 
@@ -26,30 +26,35 @@ docker compose up -d --build
 | Servicio | URL |
 |----------|-----|
 | Dashboard | http://localhost:8080 |
+| Login | http://localhost:8080/login |
 | API (health) | http://localhost:8787/api/health |
 | PostgreSQL | `localhost:5432` |
+| IPAM | http://localhost:8790 |
 
-## Alcance del fork
+**Credenciales lab (dashboard):**
 
-### Incluido
+- `admin@obserlgcr.local` / `changeme-admin`
+- `operator@obserlgcr.local` / `changeme-operator`
 
-- **Detección** — centro de detección y alertas
-- **Score IOC / Clasificación** — perfiles de scoring y cierre de incidentes
-- **Gestión de incidentes** — ciclo de vida de casos (sin investigación profunda)
-- **Tickets** — sistema de tickets y configuración
+## Alcance del fork (commit actual)
 
-### Excluido deliberadamente
+### Incluido y operativo
 
-- Investigación de casos (`/api/cases`)
-- Hunting y caza externa
-- Vigilancia digital
-- Fuentes externas de inteligencia
-- SOC chat
-- Administración de operadores/organizaciones
-- Keycloak, Trino, MinIO y Airflow
+- **NOC** — dispositivos, alertas, heartbeat, gobernanza, ACK inventario
+- **Detección** — KPIs, fuentes, explorador de logs, IPAM, descubrimiento nmap, activos unificados
+- **Gestión de incidentes** — cola, detalle, cierre, supresiones, duplicados, perfiles de scoring
+- **Config** — usuarios de plataforma (`/admin/settings`)
 
-> Muchos archivos del proyecto padre se copiaron pero quedan **inertes** (no montados en el router ni en el servidor). Pueden eliminarse en una pasada de poda futura.
+### Excluido (código eliminado o API no montada)
+
+- Módulo `/soc` (score/clasificación Trino)
+- Tickets (`/tickets`, `/api/tickets`)
+- Investigación profunda (`/api/cases`)
+- Workflow SOC (`/api/workflow/*`)
+- Trino, MinIO, Keycloak, Airflow en el stack Docker
+
+Las migraciones SQL del padre pueden crear tablas legacy (tickets, handover, etc.) que **no tienen UI ni router** en este fork.
 
 ## Licencia
 
-Este proyecto está bajo [GNU General Public License v3.0](../LICENSE).
+[GNU General Public License v3.0](../LICENSE)

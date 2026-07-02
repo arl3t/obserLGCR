@@ -1,6 +1,6 @@
 # API REST
 
-Referencia de los endpoints **activos** en obserLGCR. Todos pasan por `requireAuth()` que, en modo lab (`OIDC_ENABLED=false`), no bloquea ninguna petición.
+Referencia de los endpoints **montados** en obserLGCR. Con `OIDC_ENABLED=false`, el middleware `requireAuth()` del API no bloquea peticiones; el dashboard igual exige JWT de plataforma salvo modo lab sin login.
 
 **Base URL:** `http://localhost:8787`
 
@@ -44,7 +44,7 @@ Router principal de gestión de incidentes, detección y operaciones SOC.
 |--------|------|-------------|
 | `GET` | `/:id` | Detalle del caso |
 | `PATCH` | `/:id` | Actualizar caso |
-| `PATCH` | `/:id/status` | Cambiar estado |
+| `PATCH` | `/:id/status` | Cambiar estado (cierre: `classification`; postmortem en `lessonsLearned` si aplica) |
 | `GET` | `/:id/timeline` | Línea de tiempo |
 | `GET` | `/:id/events` | Eventos del caso |
 | `GET` | `/:id/narrative` | Narrativa ejecutiva |
@@ -96,54 +96,27 @@ Router principal de gestión de incidentes, detección y operaciones SOC.
 
 ---
 
-## Tickets — `/api/tickets`
+## Detección — `/api/detection`
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `GET` | `/` | Listar tickets |
-| `POST` | `/` | Crear ticket |
-| `GET` | `/:id` | Detalle |
-| `PATCH` | `/:id/status` | Cambiar estado |
-| `POST` | `/:id/messages` | Agregar mensaje |
-| `POST` | `/:id/mark-read` | Marcar como leído |
-| `POST` | `/:id/assign` | Asignar |
-| `POST` | `/:id/link-case` | Vincular a caso |
-| `POST` | `/:id/unlink-case` | Desvincular caso |
-| `POST` | `/:id/request-closure` | Solicitar cierre |
-| `GET` | `/metrics` | Métricas |
-| `GET` | `/by-case/:caseId` | Tickets de un caso |
-| `GET` | `/activity` | Actividad reciente |
-| `POST` | `/bulk` | Operaciones masivas |
+| `POST` | `/ingest` | Ingesta de eventos (JWT agente o clave ingest) |
+| `GET` | `/kpis` | KPIs 24h por familia |
+| `GET` | `/sources` | Catálogo de fuentes |
+| `PATCH` | `/sources/:family` | Habilitar/deshabilitar familia |
+| `GET` | `/events` | Explorador con filtros |
+| `GET` | `/events/:id` | Detalle de evento |
+| `GET` | `/log-types` | Tipos `source_log` admitidos |
+| `GET` | `/stats` | Estadísticas agregadas |
 
-### Plantillas y automatización
+Alias en raíz del API:
 
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/templates` | Plantillas |
-| `POST` | `/templates` | Crear plantilla |
-| `DELETE` | `/templates/:id` | Eliminar plantilla |
-| `GET` | `/rules` | Reglas de automatización |
-| `POST` | `/rules` | Crear regla |
-| `PATCH` | `/rules/:id` | Actualizar regla |
-| `DELETE` | `/rules/:id` | Eliminar regla |
+- `GET /api/detection-sources` → `/sources`
+- `PATCH /api/detection-sources/:family` → `/sources/:family`
 
-### Servicios y preferencias
+## IPAM — `/api/v1/ipam`
 
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/services` | Servicios de ticket |
-| `POST` | `/services` | Crear servicio |
-| `GET` | `/saved-views` | Vistas guardadas |
-| `GET` | `/prefs` | Preferencias de usuario |
-| `PUT` | `/prefs` | Actualizar preferencias |
-| `GET` | `/sla-com` | SLA de comunicación |
-| `PUT` | `/sla-com` | Actualizar SLA com |
-
----
-
-## Integraciones — `/api/integrations`
-
-Endpoints para webhooks, API keys y credenciales de integración de tickets. Ver `api/routes/ticketIntegrations.mjs`.
+Proxy al microservicio FastAPI (`ipam:8000`). Usado por Detección → Inventario y Descubrimiento.
 
 ---
 
@@ -163,7 +136,26 @@ Endpoints para webhooks, API keys y credenciales de integración de tickets. Ver
 
 ## Operadores — `/api/operators`
 
-Endpoints para listar y gestionar operadores SOC (nombres de asignación). Ver `api/routes/operators.mjs`.
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| `GET` | `/` | Operadores SOC activos (asignación, modales) |
+| `GET` | `/roles` | Catálogo `soc_roles` |
+| `GET` | `/shift-manager/current` | Shift manager activo |
+| `GET` | `/me` | Operador vinculado al JWT (CI) |
+| `GET` | `/:id/oes` | Métricas OES (stub) |
+| `POST` | `/:id/oes` | Recalcular OES |
+
+---
+
+## Usuarios plataforma — `/api/users`
+
+CRUD de usuarios del dashboard (`platform_users`). Requiere rol admin en JWT.
+
+---
+
+## Inventario NOC — `/api/inventory`
+
+Endpoints de inventario/governance NOC (complemento de `/api/noc`).
 
 ---
 
@@ -251,7 +243,7 @@ Ver [modulo-noc.md](modulo-noc.md) para guía completa.
 
 ## WebSocket (Socket.io)
 
-El API expone Socket.io para actualizaciones en tiempo real (notificaciones de casos, tickets, adopciones). El dashboard se conecta vía `dashboard/src/lib/socket.ts`.
+El API expone Socket.io para actualizaciones de casos en tiempo real. El dashboard se conecta vía `dashboard/src/lib/socket.ts`.
 
 Orígenes CORS permitidos: `DASHBOARD_URL`, localhost:5173/4173 y `SOCKETIO_CORS_ORIGINS`.
 
@@ -259,9 +251,9 @@ Orígenes CORS permitidos: `DASHBOARD_URL`, localhost:5173/4173 y `SOCKETIO_CORS
 
 ## Autenticación en peticiones
 
-En **modo lab** no se requiere cabecera de autorización.
+En **modo lab sin login** (`PLATFORM_AUTH_ENABLED=false` + build con `VITE_PLATFORM_AUTH=false`) no se requiere cabecera.
 
-En **modo OIDC** (fase 2/3), incluir:
+En **modo normal** (default Docker), incluir JWT del login:
 
 ```
 Authorization: Bearer <JWT>

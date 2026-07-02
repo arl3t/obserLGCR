@@ -8,16 +8,17 @@
 | Docker Compose | v2+ |
 | Git | cualquier versión reciente |
 
-Para desarrollo local sin Docker también necesitas **Node.js 22+** y **PostgreSQL 16**.
+Para desarrollo local sin Docker: **Node.js 22+**, **Python 3.11+** (IPAM/runner nmap) y **PostgreSQL 16** (o TimescaleDB).
 
 ## Instalación con Docker (recomendado)
 
 ### 1. Clonar el repositorio
 
 ```bash
-git clone https://github.com/arl3t/obserLGCR.git
+git clone -b main https://github.com/arl3t/obserLGCR.git
 cd obserLGCR
-git checkout main
+git checkout main   # por si el remoto aún tiene default branch distinta
+git pull
 ```
 
 ### 2. Configurar variables de entorno
@@ -26,7 +27,7 @@ git checkout main
 cp .env.example .env
 ```
 
-Los valores por defecto son suficientes para un entorno de laboratorio local. Ver [configuracion.md](configuracion.md) para personalizar puertos y credenciales.
+Los valores por defecto bastan para laboratorio local. Ver [configuracion.md](configuracion.md) para puertos, IPAM y auth.
 
 ### 3. Levantar el stack
 
@@ -34,82 +35,151 @@ Los valores por defecto son suficientes para un entorno de laboratorio local. Ve
 docker compose up -d --build
 ```
 
-Esto inicia tres servicios:
+Servicios levantados:
 
-| Contenedor | Imagen | Puerto host |
-|------------|--------|-------------|
-| `obserlgcr-postgres` | `postgres:16-alpine` | 5432 |
-| `obserlgcr-api` | `obserlgcr-api:local` | 8787 |
-| `obserlgcr-dashboard` | `obserlgcr-dashboard:local` | 8080 |
+| Contenedor | Imagen / build | Puerto host | Función |
+|------------|----------------|-------------|---------|
+| `obserlgcr-postgres` | `timescale/timescaledb:latest-pg16` | 5432 | Base de datos |
+| `obserlgcr-api` | `obserlgcr-api:local` | 8787 | API Express |
+| `obserlgcr-dashboard` | `obserlgcr-dashboard:local` | 8080 | UI (nginx + SPA) |
+| `obserlgcr-ipam` | `obserlgcr-ipam:local` | 8790 | IPAM / nmap (FastAPI) |
+
+El API espera a Postgres healthy; el dashboard depende de API e IPAM.
 
 ### 4. Verificar el arranque
 
 ```bash
-# Estado de los contenedores
+# Estado
 docker compose ps
 
-# Health check de la API
-curl http://localhost:8787/api/health
+# Health API
+curl -s http://localhost:8787/api/health
 # → {"ok":true,"service":"obserlgcr-api","mode":"demo-noauth"}
 
-# Logs del API (incluye migraciones)
-docker compose logs -f api
+# Migraciones (en logs del API al arrancar)
+docker compose logs api | tail -30
 ```
 
 ### 5. Acceder al dashboard
 
-Abre http://localhost:8080 en el navegador. La aplicación redirige automáticamente a `/detection`.
+1. Abrir http://localhost:8080
+2. Redirige a `/login` (auth de plataforma activa por defecto)
+3. Tras login, la app abre en **NOC** (`/` → `/noc`)
 
-> No hay pantalla de login. El modo lab concede acceso como administrador sintético.
+| Usuario | Contraseña | Rol |
+|---------|------------|-----|
+| `admin@obserlgcr.local` | `changeme-admin` | admin |
+| `operator@obserlgcr.local` | `changeme-operator` | analyst |
+
+Crear más usuarios:
+
+```bash
+docker compose exec api node scripts/seed-platform-user.mjs email@dominio.local password [role] [nombre]
+```
+
+### 6. Módulos principales
+
+| URL | Módulo |
+|-----|--------|
+| http://localhost:8080/noc | Monitoreo NOC |
+| http://localhost:8080/detection | Detección (logs, IPAM, discovery) |
+| http://localhost:8080/gestion | Gestión de incidentes |
+| http://localhost:8080/admin/settings | Usuarios y ajustes |
+
+## Descubrimiento nmap en LAN (opcional)
+
+El escaneo de redes `192.168.x.x` desde Docker suele fallar (el contenedor no ve la LAN del host). Para **Descubrimiento** en Detección:
+
+```bash
+# En la máquina host (fuera de Docker)
+python3 scripts/nmap-host-runner.py
+# Escucha en :8791 — configurado en .env como NMAP_RUNNER_URL
+```
+
+Variables en `.env`:
+
+```env
+NMAP_RUNNER_URL=http://host.docker.internal:8791
+NMAP_RUNNER_TOKEN=change-me-nmap-runner
+```
 
 ## Migraciones de base de datos
 
-El contenedor API ejecuta `node migrate.mjs` antes de arrancar el servidor. Las migraciones:
+El contenedor API ejecuta `node migrate.mjs` antes de `server.mjs`:
 
-- Se aplican en orden numérico desde `api/migrations/`
-- Se registran en la tabla `schema_migrations` (idempotente)
-- Continúan aunque alguna falle (migraciones que dependen del data-lake pueden omitirse en el fork demo)
+- Orden numérico desde `api/migrations/`
+- Registro en `schema_migrations`
+- Algunas migraciones del padre LegacyHunt pueden omitirse si fallan (sin Trino)
 
-Para ejecutar migraciones manualmente:
+Manual:
 
 ```bash
 docker compose exec api node migrate.mjs
 ```
 
+## Modo lab sin login (opcional)
+
+Por defecto hay login en el dashboard. Para desactivarlo en demo cerrada:
+
+```env
+# .env
+PLATFORM_AUTH_ENABLED=false
+```
+
+Rebuild del dashboard con auth desactivada:
+
+```bash
+docker compose build dashboard --build-arg VITE_PLATFORM_AUTH=false
+docker compose up -d dashboard
+```
+
+Detalle en [seguridad.md](seguridad.md#modo-lab-sin-login).
+
 ## Detener y limpiar
 
 ```bash
-# Detener servicios
 docker compose down
-
-# Detener y eliminar volúmenes (borra la base de datos)
-docker compose down -v
+docker compose down -v   # borra volumen Postgres
 ```
 
 ## Solución de problemas
 
-### El API no arranca — error de conexión a Postgres
-
-Espera a que el healthcheck de Postgres pase. El API depende de `postgres: condition: service_healthy`.
+### API no arranca — Postgres
 
 ```bash
 docker compose logs postgres
 ```
 
+El API usa `depends_on: postgres: condition: service_healthy`.
+
 ### Puerto en uso
 
-Cambia los puertos en `.env`:
+En `.env`:
 
 ```env
 API_PORT=8788
 DASHBOARD_PORT=8081
 PG_PORT=5433
+IPAM_PORT=8791
 ```
 
-### El dashboard carga pero las peticiones API fallan
+### Dashboard carga pero API falla (401/502)
 
-En producción con Docker, nginx proxea `/api` al contenedor API. Si accedes al dashboard por Vite en desarrollo (`:5173`), asegúrate de que el proxy de Vite apunte al API o configura `VITE_API_BASE_URL`.
+- Producción Docker: nginx en `:8080` proxea `/api` → contenedor API.
+- Dev Vite (`npm run dev` en `:5173`): el proxy de Vite reenvía `/api` a `:8787`. Si usás build estático sin proxy, definí `VITE_API_BASE_URL`.
 
-### Detección sin datos en vivo
+### Login rechazado
 
-Es el comportamiento esperado en el fork demo. `TRINO_URL` está vacío y el API usa un stub que devuelve 0 filas. Ver [arquitectura.md](arquitectura.md#data-lake-trino).
+Verificar que migración `119_platform_users.sql` aplicó y que usás las credenciales seed. Reset de password:
+
+```bash
+docker compose exec api node scripts/seed-platform-user.mjs admin@obserlgcr.local nueva-clave admin Admin
+```
+
+### Detección / Trino vacío
+
+Esperado sin data-lake: `TRINO_URL` vacío y stub en `server.mjs`. Los eventos ingeridos vía shipper o NOC sí aparecen en Postgres (`detection_events`).
+
+### Escaneo nmap sin resultados
+
+Comprobar que `nmap-host-runner.py` corre en el host y que `NMAP_RUNNER_URL` apunta a `host.docker.internal:8791`.

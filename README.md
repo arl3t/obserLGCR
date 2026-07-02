@@ -1,56 +1,76 @@
 # obserLGCR
 
-Fork **básico (demo)** de LegacyHunt con un subconjunto de módulos SOC y **sin autenticación** por defecto.
+Fork **demo/laboratorio** de LegacyHunt: NOC, detección, gestión de incidentes y monitoreo de infraestructura. Stack mínimo con **PostgreSQL + API + dashboard + IPAM** (sin Trino, MinIO ni Keycloak).
+
+Login local por defecto en el dashboard; ver [docs/seguridad.md](docs/seguridad.md) para modo sin login.
 
 ## Documentación
 
 | Guía | Descripción |
 |------|-------------|
 | [Índice de documentación](docs/README.md) | Punto de entrada a toda la documentación |
-| [Instalación](docs/instalacion.md) | Requisitos y arranque con Docker |
+| [Instalación](docs/instalacion.md) | Requisitos, Docker, login y verificación |
 | [Arquitectura](docs/arquitectura.md) | Componentes, flujo de datos y diseño |
-| [Módulos](docs/modulos.md) | Detección, Score IOC, Clasificación, Gestión, Tickets y NOC |
-| [NOC](docs/modulo-noc.md) | Monitoreo de infraestructura |
-| [API REST](docs/api.md) | Endpoints activos |
+| [Módulos](docs/modulos.md) | NOC, Detección, Gestión y Config |
+| [NOC](docs/modulo-noc.md) | Monitoreo de infraestructura y agentes |
+| [API REST](docs/api.md) | Endpoints activos en este fork |
 | [Configuración](docs/configuracion.md) | Variables de entorno |
 | [Desarrollo](docs/desarrollo.md) | Desarrollo local y estructura del código |
-| [Estilo / UI](docs/estilo.md) | Guía visual y design system del dashboard |
-| [Seguridad](docs/seguridad.md) | Modo lab, OIDC/Keycloak y buenas prácticas |
+| [Estilo / UI](docs/estilo.md) | Guía visual del dashboard |
+| [Seguridad](docs/seguridad.md) | Auth local, OIDC y buenas prácticas |
 
-## Módulos incluidos
+## Módulos activos
 
-| Módulo | Ruta dashboard | Backend |
-|---|---|---|
-| **Detección** | `/detection` | `routes/incidents.mjs` (vistas en vivo requieren Trino) |
-| **Score IOC** | `/soc?tab=score` | scoring sobre Postgres |
-| **Clasificación** | `/soc?tab=clasificacion` | `services/closureClassification.mjs` |
-| **Gestión de incidentes** | `/gestion` | `routes/incidents.mjs` — **sin investigación** |
-| **Tickets** | `/tickets` + `/admin/tickets-config` | `services/ticketService.mjs` |
-| **NOC** | `/noc` | `routes/noc.mjs` (dispositivos, métricas, alertas) |
+| Módulo | Ruta | Backend |
+|--------|------|---------|
+| **NOC** | `/noc` | `/api/noc`, `/api/inventory` |
+| **Detección** | `/detection` | `/api/detection`, proxy `/api/v1/ipam` |
+| **Gestión de incidentes** | `/gestion` | `/api/incidents` |
+| **Configuración** | `/admin/settings` | `/api/users`, perfiles en `/api/scoring-profiles` |
+
+Perfiles de scoring IOC y cierre de casos viven dentro de **Gestión** (`/gestion`), no en rutas `/soc` separadas.
 
 ## Inicio rápido
 
 ```bash
+git clone -b main https://github.com/arl3t/obserLGCR.git
+cd obserLGCR
 cp .env.example .env
 docker compose up -d --build
 ```
+
+> **Importante:** el código está en la rama **`main`**. Si clonás sin `-b main` y solo ves `LICENSE`, ejecutá `git checkout main`. En GitHub conviene tener **default branch = main** (Settings → General).
 
 | Servicio | URL |
 |----------|-----|
 | Dashboard | http://localhost:8080 |
 | API health | http://localhost:8787/api/health |
+| IPAM (directo) | http://localhost:8790 |
 
-## Sin autenticación
+Tras el build, el dashboard redirige a `/noc`. Iniciá sesión en `/login`:
 
-No hay login en modo lab. Pensado para demo/laboratorio — **no exponer a Internet** sin activar OIDC. Ver [docs/seguridad.md](docs/seguridad.md).
+| Email | Contraseña | Rol |
+|-------|------------|-----|
+| `admin@obserlgcr.local` | `changeme-admin` | admin |
+| `operator@obserlgcr.local` | `changeme-operator` | analyst |
+
+Ver [docs/instalacion.md](docs/instalacion.md) para verificación paso a paso, desarrollo local y modo lab sin login.
+
+## Autenticación
+
+Por defecto el dashboard usa **login local** (`POST /api/auth/login` → JWT). El API en modo lab (`OIDC_ENABLED=false`) no exige OIDC en cada petición.
+
+Para demo **sin** pantalla de login: [docs/seguridad.md](docs/seguridad.md#modo-lab-sin-login).
 
 ## Estructura
 
 ```
 obserLGCR/
-├── api/          # Express (server.mjs monta solo módulos exportados)
-├── dashboard/    # React + Vite (router y sidebar recortados)
-├── docs/         # Documentación del proyecto
+├── api/              # Express (server.mjs)
+├── dashboard/        # React + Vite
+├── ipam/             # FastAPI (inventario, nmap)
+├── docs/             # Documentación
+├── scripts/          # Utilidades (p. ej. nmap-host-runner.py)
 └── docker-compose.yml
 ```
 

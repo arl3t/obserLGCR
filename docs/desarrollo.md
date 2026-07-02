@@ -5,7 +5,9 @@
 ```
 obserLGCR/
 ├── .env.example          # Plantilla de variables de entorno
-├── docker-compose.yml    # Stack: postgres + api + dashboard
+├── docker-compose.yml    # Stack: postgres + api + dashboard + ipam
+├── scripts/              # nmap-host-runner.py, etc.
+├── ipam/                 # Microservicio FastAPI
 ├── README.md
 ├── docs/                 # Documentación
 ├── api/
@@ -14,11 +16,11 @@ obserLGCR/
 │   ├── config.mjs        # Configuración validada (Zod)
 │   ├── Dockerfile
 │   ├── package.json
-│   ├── routes/           # Routers Express (solo algunos montados)
+│   ├── routes/           # Routers montados en server.mjs
 │   ├── services/         # Lógica de negocio
 │   ├── db/               # Pool PostgreSQL
 │   ├── middleware/       # Auth, etc.
-│   └── migrations/       # ~176 migraciones SQL
+│   └── migrations/       # Migraciones SQL
 └── dashboard/
     ├── Dockerfile
     ├── nginx.docker.conf # Proxy /api en producción
@@ -26,14 +28,13 @@ obserLGCR/
     ├── vite.config.ts
     └── src/
         ├── main.tsx
-        ├── router.tsx    # Rutas activas del fork
-        ├── styles/       # Design system obserLGCR (obserlgcr.css)
-        ├── pages/        # Páginas (solo 5+2 activas)
-        ├── components/   # UI (Radix + Tailwind)
-        ├── hooks/        # React hooks
-        ├── lib/          # Utilidades, API client
-        ├── store/        # Zustand stores
-        └── auth/         # OIDC (pass-through en lab)
+        ├── router.tsx    # /noc, /detection, /gestion, /admin/settings
+        ├── styles/       # obserlgcr.css
+        ├── pages/
+        ├── components/
+        ├── hooks/
+        ├── lib/
+        └── auth/         # Login local + OIDC opcional
 ```
 
 ## Desarrollo local sin Docker
@@ -77,8 +78,9 @@ npm run dev
 cd dashboard
 npm install
 
-# Sin auth, API en localhost
+# Sin auth de plataforma, API en localhost
 export VITE_OIDC_AUTHORITY=""
+export VITE_PLATFORM_AUTH="false"
 export VITE_API_BASE_URL="http://localhost:8787"
 
 npm run dev
@@ -162,14 +164,12 @@ cd dashboard && npm run typecheck
 
 No hay suite de tests automatizados en el fork demo.
 
-## Código podado
+## Código podado (2026)
 
-El fork demo fue podado para conservar solo los módulos activos. Se eliminaron:
+El fork eliminó módulos sin router montado:
 
-- `lgcrTI-main/` — proyecto fuente (NOC ya integrado)
-- Rutas API no montadas: hunt, portal, inventory, kbAdmin, socWorkflow, etc.
-- ~78 servicios API sin dependencias desde los routers activos
-- ~185 archivos frontend (páginas, componentes, hooks) no alcanzables desde el router
-- Carpetas: `digital-surveillance`, `soc-chat`, `portal-static`, `controllers`
+- UI: `/soc`, tickets, investigación profunda, inteligencia Trino
+- API no montada: `/api/tickets`, `/api/workflow`, `/api/cases`, `/api/trino`
+- Frontend huérfano: `digital-surveillance`, `soc-chat`, etc.
 
-Para reactivar un módulo eliminado, recuperarlo del historial git de LegacyHunt.
+Para reactivar un módulo del padre LegacyHunt: recuperar del historial git del proyecto original y montar router + ruta + nav.

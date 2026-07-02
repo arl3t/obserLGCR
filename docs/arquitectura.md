@@ -2,34 +2,41 @@
 
 ## Visión general
 
-obserLGCR es un fork **reducido** de LegacyHunt. Mantiene el esquema PostgreSQL completo de la plataforma original pero monta solo los módulos necesarios para operación SOC básica en modo laboratorio.
+obserLGCR es un fork **reducido** de LegacyHunt. Conserva migraciones PostgreSQL del padre pero monta solo los routers necesarios para NOC, detección, gestión de incidentes y auth local.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        Navegador                            │
-│                   http://localhost:8080                     │
+│              http://localhost:8080  (+ /login)              │
 └──────────────────────────┬──────────────────────────────────┘
-                           │ HTTP + WebSocket
+                           │ HTTP + WebSocket (/api/socket.io)
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              Dashboard (React 19 + Vite 6)                  │
 │         nginx: proxy /api → API, SPA estática               │
-│         Router recortado a 5 módulos activos                │
+│         Rutas: /noc, /detection, /gestion, /admin/settings  │
 └──────────────────────────┬──────────────────────────────────┘
                            │ /api/*
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              API (Express 4 + Socket.io)                    │
-│         server.mjs — monta solo routers exportados          │
-│         Modo lab: requireAuth() = pass-through              │
+│         server.mjs — routers exportados al fork             │
+│         OIDC off → requireAuth() pass-through en API        │
 └──────────────┬──────────────────────────┬───────────────────┘
                │                          │
                ▼                          ▼
 ┌──────────────────────────┐   ┌──────────────────────────────┐
-│   PostgreSQL 16          │   │   Trino (NO incluido)        │
-│   Casos, tickets,        │   │   Stub → devuelve []         │
-│   scoring, KPIs, SLA       │   │   Detección en vivo inerte   │
+│ PostgreSQL / TimescaleDB │   │   IPAM (FastAPI)             │
+│ Casos, NOC, detection,   │   │   Proxy /api/v1/ipam         │
+│ scoring, operadores      │   │   nmap vía runner en host    │
 └──────────────────────────┘   └──────────────────────────────┘
+               │
+               ▼
+┌──────────────────────────┐
+│ Trino (NO en Docker)     │
+│ Stub → [] en consultas   │
+│ Iceberg sync opcional    │
+└──────────────────────────┘
 ```
 
 ## Componentes
@@ -40,12 +47,13 @@ obserLGCR es un fork **reducido** de LegacyHunt. Mantiene el esquema PostgreSQL 
 |---------|---------|
 | Framework | React 19, TypeScript |
 | Build | Vite 6 |
-| Estilos | Tailwind CSS 4 |
+| Estilos | Tailwind CSS 4, `styles/obserlgcr.css` |
 | Estado | Zustand, TanStack Query |
 | Routing | React Router 6 (`src/router.tsx`) |
-| Producción | nginx sirve `dist/` y proxea `/api` |
+| Auth | JWT local (`POST /api/auth/login`) o OIDC si se configura |
+| Producción | nginx (`nginx.docker.conf`) |
 
-El sidebar (`AppSidebar.tsx`) y el router solo exponen los módulos exportados al fork.
+Navegación: `AppHeader.tsx` (`NOC`, `Detección`, `Incidentes`, `Config`).
 
 ### API (`api/`)
 
@@ -53,73 +61,83 @@ El sidebar (`AppSidebar.tsx`) y el router solo exponen los módulos exportados a
 |---------|---------|
 | Runtime | Node.js 22, ES modules (`.mjs`) |
 | Framework | Express 4 |
-| Tiempo real | Socket.io (notificaciones, actualizaciones de casos) |
-| Validación config | Zod (`config.mjs`) |
-| Base de datos | `pg` (connection pool) |
+| Tiempo real | Socket.io (actualizaciones de casos) |
+| Config | Zod (`config.mjs`) |
+| BD | `pg` pool |
 
-Punto de entrada: `server.mjs`. Solo monta estos routers:
+Routers **montados** en `server.mjs`:
 
 ```
-/api/health              → health check
-/api/incidents           → gestión de incidentes + detección
-/api/tickets             → sistema de tickets
-/api/integrations        → integraciones de tickets
-/api/scoring-profiles    → perfiles de scoring IOC
-/api/operators           → operadores (asignación)
-/api/assets              → registro de activos/sensores
+GET  /api/health
+/api/incidents          → gestión de incidentes (+ stub Trino interno)
+/api/scoring-profiles   → perfiles IOC
+/api/operators          → operadores y roles SOC
+/api/assets             → registro de activos
+/api/auth               → login agentes NOC + login dashboard
+/api/users              → usuarios plataforma
+/api/noc                → monitoreo infra
+/api/inventory          → inventario NOC
+/api/detection          → KPIs, fuentes, eventos
+/api/v1/ipam            → proxy al servicio IPAM
 ```
+
+**No montados** en el fork: `/api/tickets`, `/api/workflow`, `/api/cases`, `/api/trino`, `/api/integrations`.
 
 ### PostgreSQL
 
-- Imagen: `postgres:16-alpine`
-- Volumen persistente: `obserlgcr-pgdata`
-- ~176 migraciones SQL heredadas de LegacyHunt
-- Tablas principales: `cases`, `case_events`, `tickets`, `scoring_profiles`, `soc_operators`, `asset_registry`, etc.
+- Imagen Docker: `timescale/timescaledb:latest-pg16`
+- Volumen: `obserlgcr-pgdata`
+- Migraciones en `api/migrations/` (heredadas + específicas obserLGCR)
+- Tablas clave: `incident_cases_pg`, `noc_devices`, `detection_events`, `soc_operators`, `platform_users`
+
+### IPAM (`ipam/`)
+
+Microservicio FastAPI para inventario de red y orquestación nmap. El API Node hace proxy de `/api/v1/ipam` para mismo origen desde el dashboard.
 
 ### Data-lake (Trino)
 
-En LegacyHunt completo, las consultas de detección en vivo (Fortigate, Wazuh, Suricata, etc.) leen de un data-lake vía **Trino** sobre tablas Iceberg en **MinIO**.
-
-En obserLGCR:
+En LegacyHunt completo, alertas en vivo leen Iceberg vía Trino. En obserLGCR:
 
 ```javascript
-// api/server.mjs
 async function runTrinoStub() {
   return [];
 }
 ```
 
-Las vistas que dependen de Trino muestran datos vacíos. Las operaciones respaldadas por Postgres (lista de casos, workflow, tickets, scoring) funcionan normalmente.
+La detección **operativa** usa Postgres (`detection_events`, ingesta shipper). Para Trino real: configurar `TRINO_URL` y reemplazar el stub (ver [configuracion.md](configuracion.md#conectar-trino-data-lake)).
 
-Para conectar datos reales: implementar un cliente Trino y configurar `TRINO_URL` en el entorno del API.
-
-## Flujo de un incidente
+## Flujo típico NOC → incidente
 
 ```
-Detección (Trino)          Gestión (Postgres)         SOC Operations
-      │                          │                         │
-      │  alertas en vivo         │  casos abiertos         │  scoring IOC
-      │  (stub → vacío)          │  workflow L1/L2       │  clasificación
-      ▼                          ▼                         ▼
-  DetectionCenter            IncidentManagement         SocOperations
-  /detection                 /gestion                   /soc
+Agente NOC / gobernanza     PostgreSQL              Operador
+        │                        │                      │
+        │ heartbeat / ACK        │                      │
+        │───────────────────────►│                      │
+        │                        │ incidente auto       │
+        │                        │─────────────────────►│ /gestion
+        │                        │                      │ Cerrar caso
+        │                        │◄─────────────────────│ PATCH /status
 ```
 
-1. **Detección** — visualiza alertas y métricas (requiere Trino para datos en vivo).
-2. **Apertura de caso** — se persiste en PostgreSQL vía `/api/incidents`.
-3. **Score IOC** — perfiles de scoring calculan severidad y prioridad.
-4. **Clasificación** — cierre con veredicto (FP, benigno, incidente confirmado, etc.).
-5. **Tickets** — comunicación con clientes/organizaciones vinculada al caso.
+1. Dispositivo sin ACK o política de gobernanza → worker crea caso en `incident_cases_pg`.
+2. Operador abre caso desde NOC o cola de Gestión.
+3. ACK inventario (`POST /api/noc/devices/:id/inventory-ack`) o cierre manual del incidente.
 
-## Código activo
+## Autenticación (dos capas)
 
-El repositorio fue podado: solo permanecen los archivos alcanzables desde los módulos activos (Detección, SOC, Gestión, Tickets, NOC). No hay código inerte pendiente de poda.
+| Capa | Default demo | Comportamiento |
+|------|--------------|----------------|
+| Dashboard | Login JWT (`PLATFORM_AUTH_ENABLED=true`) | `/login` obligatorio |
+| API | `OIDC_ENABLED=false` | Bearer opcional; pass-through si no hay OIDC |
+
+Ver [seguridad.md](seguridad.md).
 
 ## Decisiones de diseño
 
 | Decisión | Motivo |
 |----------|--------|
-| Sin auth por defecto | Simplificar demos y laboratorios |
-| Postgres completo | Reutilizar migraciones y lógica de negocio probada |
-| Stub de Trino | Evitar dependencias de MinIO/Trino/Airflow en el stack mínimo |
-| Código no podado | Mantener compatibilidad para reactivar módulos gradualmente |
+| Stack mínimo Docker | Demo reproducible sin MinIO/Trino/Keycloak |
+| Postgres completo | Reutilizar lógica y migraciones probadas |
+| Podado frontend/backend | Eliminar módulos sin router montado (SOC, tickets, investigación) |
+| Auth local en dashboard | Proteger UI en demos expuestas en LAN |
+| nmap en host | Docker no alcanza LAN del operador |

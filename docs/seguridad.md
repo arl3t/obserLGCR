@@ -1,33 +1,61 @@
 # Seguridad
 
-## Advertencia — modo lab por defecto
+## Advertencia
 
-obserLGCR arranca **sin autenticación**. Cualquier persona con acceso de red al dashboard y la API opera como **administrador sintético**.
+El stack demo usa credenciales por defecto y el API acepta peticiones sin OIDC. El dashboard **sí pide login** (`admin@obserlgcr.local`) salvo que desactives `PLATFORM_AUTH_ENABLED`.
 
-> **No exponer a Internet** sin activar autenticación y endurecer la configuración.
+> **No exponer a Internet** sin OIDC, HTTPS y secretos rotados.
 
 ## Modos de autenticación
 
-El middleware `api/middleware/auth.middleware.mjs` soporta tres fases, heredadas de LegacyHunt:
+El fork usa **dos capas** independientes:
 
-### Fase 1 — Lab sin auth (default)
+| Capa | Variable | Default Docker |
+|------|----------|----------------|
+| API (Express) | `OIDC_ENABLED` | `false` → pass-through |
+| Dashboard (React) | `VITE_PLATFORM_AUTH` / `PLATFORM_AUTH_ENABLED` | login JWT activo |
+
+### Modo lab sin login
+
+Sin pantalla `/login` (útil en demo cerrada en localhost):
 
 ```env
+# .env
+PLATFORM_AUTH_ENABLED=false
+```
+
+Rebuild dashboard:
+
+```bash
+docker compose build dashboard --build-arg VITE_PLATFORM_AUTH=false
+docker compose up -d dashboard
+```
+
+| Componente | Comportamiento |
+|------------|----------------|
+| Dashboard | `isLabMode=true` → `ProtectedRoute` deja pasar sin JWT |
+| API | `requireAuth()` pass-through; admin sintético en `req.user` |
+
+### Login local (default)
+
+```env
+PLATFORM_AUTH_ENABLED=true
 OIDC_ENABLED=false
 ```
 
 | Componente | Comportamiento |
 |------------|----------------|
-| API | `requireAuth()` deja pasar todo; `req.user` = admin sintético |
-| Dashboard | `VITE_OIDC_AUTHORITY` vacío → `ProtectedRoute` es pass-through |
+| Dashboard | Redirige a `/login`; JWT en `Authorization: Bearer` |
+| API | Acepta JWT de `POST /api/auth/login` |
 
-Usuario sintético típico:
+Credenciales seed (migración `119`):
 
-- Roles: `admin`
-- Modo lab activo (`isLabMode: true`)
-- Sin pantalla de login ni logout
+| Email | Password |
+|-------|----------|
+| `admin@obserlgcr.local` | `changeme-admin` |
+| `operator@obserlgcr.local` | `changeme-operator` |
 
-### Fase 2 — Migración gradual
+### Fase OIDC — LegacyHunt completo
 
 ```env
 OIDC_ENABLED=true
@@ -114,10 +142,11 @@ Orígenes permitidos para WebSocket:
 | `INTERNAL_SERVICE_TOKEN` | vacío | Generar y configurar |
 | `FORCE_ACK_SECRET` | vacío | Generar si se usa force-ack |
 
-## Datos sensibles en tickets e incidentes
+## Datos sensibles en incidentes
 
-Los módulos de tickets e incidentes pueden contener información de clientes, IOCs y narrativas de seguridad. Asegurar:
+Los casos pueden contener IOCs, activos internos y narrativas de seguridad. Asegurar:
 
-- Control de acceso por rol (fase 3)
-- Cifrado en tránsito (TLS)
-- Políticas de retención de datos según normativa aplicable
+- Login activo en demos expuestas en LAN
+- OIDC (fase 3) antes de Internet
+- TLS en reverse proxy
+- Credenciales Postgres distintas a `obserlgcr/obserlgcr`

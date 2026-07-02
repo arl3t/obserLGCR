@@ -17,7 +17,8 @@ Estas variables controlan el despliegue con `docker compose`:
 | `API_PORT` | `8787` | Puerto API en el host |
 | `DASHBOARD_PORT` | `8080` | Puerto dashboard en el host |
 | `LOG_LEVEL` | `info` | Nivel de log del API |
-| `OIDC_ENABLED` | `false` | Activar autenticación OIDC |
+| `OIDC_ENABLED` | `false` | Activar autenticación OIDC en el API |
+| `PLATFORM_AUTH_ENABLED` | `true` | Login JWT del dashboard (`POST /api/auth/login`) |
 
 ### Variables del API (contenedor)
 
@@ -29,7 +30,17 @@ Configuradas en `docker-compose.yml` o vía `.env`:
 | `PG_PORT` | `5432` | Puerto interno |
 | `PORT` | `8787` | Puerto del API |
 | `TRINO_URL` | `""` (vacío) | URL del coordinador Trino |
-| `OIDC_ENABLED` | `false` | Modo sin auth |
+| `OIDC_ENABLED` | `false` | Modo sin OIDC en API |
+| `PLATFORM_AUTH_ENABLED` | `true` | Habilitar usuarios `platform_users` |
+
+### IPAM y descubrimiento nmap
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `IPAM_PORT` | `8790` | Puerto IPAM en el host |
+| `NMAP_TIMEOUT_SEC` | `600` | Timeout escaneo |
+| `NMAP_RUNNER_URL` | `http://host.docker.internal:8791` | Runner nmap en el host |
+| `NMAP_RUNNER_TOKEN` | (ver `.env.example`) | Token runner ↔ IPAM |
 
 ### Variables de scoring SOC
 
@@ -79,7 +90,8 @@ Se pasan como `ARG` en el Dockerfile del dashboard:
 | Variable | Default (Docker) | Descripción |
 |----------|------------------|-------------|
 | `VITE_API_BASE_URL` | `""` | Base URL del API (vacío = relativo `/api`) |
-| `VITE_OIDC_AUTHORITY` | `""` | Authority OIDC (vacío = modo lab) |
+| `VITE_OIDC_AUTHORITY` | `""` | Authority OIDC (vacío = sin Keycloak) |
+| `VITE_PLATFORM_AUTH` | `true` | Login local; `"false"` = modo lab sin `/login` |
 | `VITE_TENANT_NAME` | `obserLGCR` | Nombre del tenant en UI |
 
 ## Personalizar puertos

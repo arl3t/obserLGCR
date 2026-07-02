@@ -136,10 +136,8 @@ Rutas en el header (`AppHeader.tsx`):
 |----------|------|
 | NOC | `/noc` (inicio por defecto) |
 | Detección | `/detection` |
-| SOC | `/soc` |
 | Incidentes | `/gestion` |
-| Tickets | `/tickets` |
-| Config | `/admin/tickets-config` |
+| Config | `/admin/settings` |
 
 Estado activo: `NavLink` de React Router aplica `aria-current="page"`; el estilo activo está en `.obser-nav-link[aria-current="page"]`.
 
