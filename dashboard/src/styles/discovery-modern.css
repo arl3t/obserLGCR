@@ -769,6 +769,79 @@
   background: rgb(0 0 0 / 0.15);
 }
 
+.discovery-schedule-active {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  border-radius: 0.55rem;
+  border: 1px solid rgb(56 189 248 / 0.2);
+  background: rgb(56 189 248 / 0.06);
+  padding: 0.65rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.discovery-schedule-block {
+  border-radius: 0.5rem;
+  border: 1px dashed rgb(255 255 255 / 0.1);
+  padding: 0.65rem;
+}
+
+.discovery-schedule-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.discovery-schedule-mode {
+  border-radius: 0.4rem;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  padding: 0.3rem 0.55rem;
+  font-size: 11px;
+  color: rgb(255 255 255 / 0.55);
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.discovery-schedule-mode--active {
+  border-color: rgb(56 189 248 / 0.45);
+  background: rgb(56 189 248 / 0.12);
+  color: rgb(103 232 249);
+}
+
+.discovery-governance-options {
+  display: grid;
+  gap: 0.35rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(251 191 36 / 0.15);
+  background: rgb(251 191 36 / 0.04);
+  padding: 0.55rem 0.65rem;
+}
+
+.discovery-job-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+}
+
+.discovery-job-badge {
+  font-size: 9px;
+  border-radius: 0.3rem;
+  padding: 0.08rem 0.4rem;
+  background: rgb(52 211 153 / 0.12);
+  color: rgb(110 231 183);
+}
+
+.discovery-job-badge--warn {
+  background: rgb(251 191 36 / 0.15);
+  color: rgb(252 211 77);
+}
+
+.discovery-job-badge--muted {
+  background: rgb(255 255 255 / 0.06);
+  color: rgb(255 255 255 / 0.45);
+}
+
 .discovery-timeline {
   border: 1px solid rgb(255 255 255 / 0.08);
   border-radius: 0.75rem;

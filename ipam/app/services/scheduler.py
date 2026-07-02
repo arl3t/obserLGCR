@@ -4,6 +4,7 @@ import logging
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
@@ -79,27 +80,40 @@ def refresh_discovery_jobs() -> None:
                 _scheduler.remove_job(job.id)
         rows = (
             db.query(NetworkDiscoveryJob)
-            .filter(NetworkDiscoveryJob.schedule_enabled.is_(True), NetworkDiscoveryJob.schedule_cron.isnot(None))
+            .filter(NetworkDiscoveryJob.schedule_enabled.is_(True))
             .all()
         )
         for job in rows:
-            cron = (job.schedule_cron or "").strip()
-            if not cron:
-                continue
-            parts = cron.split()
-            if len(parts) != 5:
-                continue
+            job_key = f"discovery-{job.id}"
             try:
-                trigger = CronTrigger(minute=parts[0], hour=parts[1], day=parts[2], month=parts[3], day_of_week=parts[4])
+                if job.schedule_interval_minutes and job.schedule_interval_minutes >= 15:
+                    trigger = IntervalTrigger(minutes=job.schedule_interval_minutes)
+                    _scheduler.add_job(
+                        _run_discovery_job,
+                        trigger=trigger,
+                        id=job_key,
+                        args=[job.id],
+                        replace_existing=True,
+                    )
+                    continue
+                cron = (job.schedule_cron or "").strip()
+                if not cron:
+                    continue
+                parts = cron.split()
+                if len(parts) != 5:
+                    continue
+                trigger = CronTrigger(
+                    minute=parts[0], hour=parts[1], day=parts[2], month=parts[3], day_of_week=parts[4],
+                )
                 _scheduler.add_job(
                     _run_discovery_job,
                     trigger=trigger,
-                    id=f"discovery-{job.id}",
+                    id=job_key,
                     args=[job.id],
                     replace_existing=True,
                 )
             except Exception:
-                logger.exception("invalid_discovery_cron job=%s cron=%s", job.id, cron)
+                logger.exception("invalid_discovery_schedule job=%s", job.id)
     finally:
         db.close()
 

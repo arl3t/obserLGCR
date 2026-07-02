@@ -18,7 +18,10 @@ class DiscoveryJobCreate(BaseModel):
     scan_profile: ScanProfile = "discovery"
     custom_args: str | None = None
     schedule_cron: str | None = Field(default=None, max_length=64)
+    schedule_interval_minutes: int | None = Field(default=None, ge=15, le=10080)
     schedule_enabled: bool = False
+    detect_new_assets: bool = True
+    open_incidents_on_unacked: bool = True
     auto_sync_ipam: bool = False
     scan_cves: bool = False
     ipam_subnet_id: int | None = None
@@ -54,7 +57,10 @@ class DiscoveryJobResponse(BaseModel):
     scan_profile: str
     custom_args: str | None
     schedule_cron: str | None
+    schedule_interval_minutes: int | None = None
     schedule_enabled: bool
+    detect_new_assets: bool = True
+    open_incidents_on_unacked: bool = True
     auto_sync_ipam: bool
     scan_cves: bool
     ipam_subnet_id: int | None

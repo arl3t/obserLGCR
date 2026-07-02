@@ -22,7 +22,10 @@ export interface DiscoveryJob {
   scan_profile: ScanProfile;
   custom_args: string | null;
   schedule_cron: string | null;
+  schedule_interval_minutes: number | null;
   schedule_enabled: boolean;
+  detect_new_assets: boolean;
+  open_incidents_on_unacked: boolean;
   auto_sync_ipam: boolean;
   scan_cves: boolean;
   ipam_subnet_id: number | null;
@@ -40,7 +43,10 @@ export interface DiscoveryJobCreate {
   scan_profile?: ScanProfile;
   custom_args?: string;
   schedule_cron?: string;
+  schedule_interval_minutes?: number;
   schedule_enabled?: boolean;
+  detect_new_assets?: boolean;
+  open_incidents_on_unacked?: boolean;
   auto_sync_ipam?: boolean;
   scan_cves?: boolean;
   ipam_subnet_id?: number;

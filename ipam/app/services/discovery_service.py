@@ -249,6 +249,19 @@ def execute_run(
                 ),
             }
 
+        governance: dict[str, Any] = {}
+        if run.job_id:
+            job = db.get(NetworkDiscoveryJob, run.job_id)
+            if job and (job.detect_new_assets or job.open_incidents_on_unacked):
+                skip_incidents = bool(auto_sync_ipam and ipam_subnet_id)
+                governance = apply_run_governance(
+                    db,
+                    run,
+                    hosts,
+                    detect_new_assets=job.detect_new_assets,
+                    open_incidents_on_unacked=job.open_incidents_on_unacked and not skip_incidents,
+                )
+
         finished = datetime.now(UTC)
         run.status = "completed"
         run.finished_at = finished
@@ -259,7 +272,7 @@ def execute_run(
         run.nmap_summary = summary
         run.nmap_command = command
         run.raw_xml = raw_xml
-        run.stats_json = {**stats, "integration": integration}
+        run.stats_json = {**stats, "integration": integration, **({"governance": governance} if governance else {})}
 
         if run.job_id:
             job = db.get(NetworkDiscoveryJob, run.job_id)
@@ -962,6 +975,61 @@ def compare_runs(db: Session, run_id: int, base_run_id: int | None = None) -> di
         "removed_hosts": removed_hosts,
         "changed_hosts": changed_hosts,
     }
+
+
+def apply_run_governance(
+    db: Session,
+    run: NetworkDiscoveryRun,
+    hosts: list[ParsedHost],
+    *,
+    detect_new_assets: bool = True,
+    open_incidents_on_unacked: bool = True,
+) -> dict[str, Any]:
+    """
+    Tras un escaneo programado: detecta activos nuevos vs baseline anterior
+    y abre incidentes de gobernanza para dispositivos NOC sin ACK de inventario.
+    """
+    from app.services.asset_integration import enqueue_unknown_asset_incidents, ensure_noc_stubs_from_nmap_hosts
+    from app.services.nmap_discovery import NmapHost
+
+    up_hosts = [h for h in hosts if h.status == "up"]
+    up_ips = [h.ip for h in up_hosts]
+    governance: dict[str, Any] = {
+        "new_hosts_count": 0,
+        "new_hosts": [],
+        "incidents_opened": 0,
+        "unacked_hosts_checked": 0,
+    }
+
+    if detect_new_assets:
+        try:
+            delta = compare_runs(db, run.id, None)
+            new_hosts = delta.get("new_hosts", [])
+            governance["new_hosts_count"] = len(new_hosts)
+            governance["new_hosts"] = new_hosts[:50]
+            governance["delta_summary"] = delta.get("summary", {})
+        except Exception:
+            logger.exception("governance_delta_failed run=%s", run.id)
+
+    if open_incidents_on_unacked and up_ips:
+        nmap_hosts = [NmapHost(ip=h.ip, hostname=h.hostname, mac=h.mac) for h in up_hosts]
+        parsed_by_ip = {h.ip: h for h in hosts}
+        ensure_noc_stubs_from_nmap_hosts(db, nmap_hosts, parsed_by_ip=parsed_by_ip)
+        governance["unacked_hosts_checked"] = len(up_ips)
+        governance["incidents_opened"] = enqueue_unknown_asset_incidents(
+            db,
+            ip_addresses=up_ips,
+            source="discovery_scheduled",
+        )
+        if governance["incidents_opened"]:
+            logger.info(
+                "governance_incidents run=%s job=%s count=%s",
+                run.id,
+                run.job_id,
+                governance["incidents_opened"],
+            )
+
+    return governance
 
 
 def get_critical_alerts(db: Session, run_id: int) -> dict[str, Any]:
