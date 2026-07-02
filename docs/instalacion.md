@@ -238,11 +238,16 @@ El contenedor API ejecuta `node migrate.mjs` antes de `server.mjs`:
 - Registro en `schema_migrations`
 - Algunas migraciones del padre LegacyHunt pueden omitirse si fallan (sin Trino)
 
-Manual:
+Manual (recomendado — usa el contenedor API, no Node en el host):
 
 ```bash
+./scripts/migrate.sh
+# equivalente:
 docker compose exec api node migrate.mjs
 ```
+
+> **No ejecute** `node api/migrate.mjs` en el servidor sin instalar dependencias en `api/` (`npm ci`).
+> En el host falta el paquete `pg` y las variables `PG_HOST` apuntan mal (debe ser `postgres` dentro de Docker, no `localhost`).
 
 ## Modo lab sin login (opcional)
 
@@ -304,7 +309,25 @@ grep ^PG_PORT= .env    # debe ser 5433 (no 5432 si ya hay Postgres en el host)
 docker compose down
 docker compose up -d --build
 # Esperar ~1 min (migraciones) y reintentar login
-docker compose exec api node migrate.mjs
+./scripts/migrate.sh
+```
+
+### `Cannot find package 'pg'` al migrar
+
+Ejecutó migraciones **en el host** (`node api/migrate.mjs` o `node migrate.mjs`) sin `npm install` en `api/`.
+
+**Solución:**
+
+```bash
+cd ~/obserLGCR
+docker compose up -d api
+./scripts/migrate.sh
+```
+
+Alternativa solo si desarrolla sin Docker:
+
+```bash
+cd api && npm ci && PG_HOST=127.0.0.1 PG_PORT=5433 node migrate.mjs
 ```
 
 Si Postgres sigue reiniciándose (OOM en VPS pequeño), asigná al menos **2 GB RAM** o liberá memoria antes de levantar el stack.
