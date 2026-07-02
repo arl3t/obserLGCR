@@ -14,7 +14,7 @@ export function getPgPool() {
       password: process.env.PG_PASSWORD,
       max:      10,
       idleTimeoutMillis:       30000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: parseInt(process.env.PG_CONNECT_TIMEOUT_MS ?? "10000", 10),
     });
 
     _pool.on("error", (err) => {

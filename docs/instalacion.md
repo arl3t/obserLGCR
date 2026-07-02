@@ -152,6 +152,36 @@ docker compose logs postgres
 
 El API usa `depends_on: postgres: condition: service_healthy`.
 
+### Login muestra "Error interno" / API no conecta a Postgres
+
+Síntomas en `docker logs obserlgcr-api`:
+
+- `Connection terminated due to connection timeout`
+- `getaddrinfo EAI_AGAIN postgres`
+- `POST /login` → 500
+
+**Causa habitual:** el contenedor `obserlgcr-postgres` no está healthy (RAM baja, TimescaleDB lento al iniciar, o puerto mal configurado).
+
+```bash
+docker compose ps
+docker logs obserlgcr-postgres --tail 80
+docker logs obserlgcr-api --tail 40
+```
+
+**Reparar:**
+
+```bash
+cd ~/obserLGCR
+git pull origin main
+grep ^PG_PORT= .env    # debe ser 5433 (no 5432 si ya hay Postgres en el host)
+docker compose down
+docker compose up -d --build
+# Esperar ~1 min (migraciones) y reintentar login
+docker compose exec api node migrate.mjs
+```
+
+Si Postgres sigue reiniciándose (OOM en VPS pequeño), asigná al menos **2 GB RAM** o liberá memoria antes de levantar el stack.
+
 ### Puerto en uso
 
 En `.env`:

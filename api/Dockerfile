@@ -9,5 +9,5 @@ RUN npm install --omit=dev --no-audit --no-fund
 COPY . .
 
 EXPOSE 8787
-# Aplica migraciones (idempotente; fallos legacy no bloquean arranque) y escucha API.
-CMD ["sh", "-c", "node migrate.mjs || true; exec node server.mjs"]
+# Espera PG → migraciones (idempotente) → API. Sin PG no arranca (evita login 500).
+CMD ["sh", "-c", "node scripts/wait-for-postgres.mjs && (node migrate.mjs || true) && exec node server.mjs"]
