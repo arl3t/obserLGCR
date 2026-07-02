@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SnmpSettingsSection } from "@/components/settings/SnmpSettingsSection";
+import { AgentRegistrationSection } from "@/components/settings/AgentRegistrationSection";
 import { cn } from "@/lib/utils";
 
 const ROLES = ["analyst", "hunter", "manager", "admin"] as const;
@@ -266,6 +267,8 @@ export function PlatformSettingsPage() {
           </div>
         </div>
       )}
+
+      {isAdmin && <AgentRegistrationSection />}
 
       {isAdmin && <SnmpSettingsSection />}
     </div>

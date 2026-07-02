@@ -391,6 +391,232 @@
   justify-content: flex-end;
 }
 
+/* Umbrales colapsables */
+.noc-thresholds-collapsible {
+  padding: 0;
+  overflow: hidden;
+}
+
+.noc-thresholds-collapsible__trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.noc-thresholds-collapsible__trigger:hover {
+  background: color-mix(in srgb, var(--ut-accent) 5%, transparent);
+}
+
+.noc-thresholds-collapsible__title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.noc-thresholds-collapsible__summary {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.6875rem;
+  color: var(--ut-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.noc-thresholds-collapsible__chevron {
+  flex-shrink: 0;
+  color: var(--ut-text-secondary);
+  transition: transform 0.15s ease;
+}
+
+.noc-thresholds-collapsible__chevron--open {
+  transform: rotate(180deg);
+}
+
+.noc-thresholds-form--compact {
+  padding: 0 0.85rem 0.85rem;
+  gap: 0.5rem;
+}
+
+.noc-thresholds-form--compact .ut-card__label {
+  margin-bottom: 0.25rem;
+  font-size: 0.65rem;
+}
+
+/* Salud compacta — detalle dispositivo */
+.obser-shell .ut-card--compact {
+  padding: 0.75rem 0.85rem;
+}
+
+.obser-shell .ut-layout--salud-compact {
+  grid-template-columns: 1fr minmax(200px, 240px);
+  gap: 0.75rem;
+}
+
+.obser-shell .ut-main--salud-compact {
+  gap: 0.65rem;
+}
+
+.noc-salud-status__primary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.65rem;
+}
+
+.noc-salud-status__cell .ut-card__label {
+  margin-bottom: 0.2rem;
+  font-size: 0.65rem;
+}
+
+.noc-salud-status__value {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.noc-salud-status__value--sm {
+  font-size: 1rem;
+}
+
+.noc-salud-status__value--success { color: var(--ut-success); }
+.noc-salud-status__value--warning { color: var(--ut-warning); }
+.noc-salud-status__value--danger { color: var(--ut-danger); }
+.noc-salud-status__value--muted { color: var(--ut-text-secondary); }
+
+.noc-salud-status__sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.6875rem;
+  color: var(--ut-text-secondary);
+  line-height: 1.35;
+}
+
+.noc-salud-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--ut-border-subtle);
+}
+
+.noc-salud-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  background: var(--ut-bg-elevated);
+  border: 1px solid var(--ut-border-subtle);
+  font-size: 0.6875rem;
+}
+
+.noc-salud-pill__label {
+  color: var(--ut-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.noc-salud-pill__val {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.noc-salud-pill__meta {
+  color: var(--ut-text-secondary);
+}
+
+.noc-metrics-grid--compact {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .noc-metrics-grid--compact {
+    grid-template-columns: 1fr;
+  }
+
+  .noc-salud-status__primary {
+    grid-template-columns: 1fr;
+  }
+
+  .obser-shell .ut-layout--salud-compact {
+    grid-template-columns: 1fr;
+  }
+}
+
+.obser-shell .ut-bars--compact {
+  height: 1.25rem;
+  margin-top: 0.35rem;
+}
+
+.obser-shell .ut-chart--compact {
+  min-height: 72px;
+}
+
+.obser-shell .ut-chart--compact .ut-chart__svg {
+  height: 72px;
+}
+
+.obser-shell .ut-chart-head--compact {
+  margin-bottom: 0.35rem;
+}
+
+.obser-shell .ut-chart-head--compact .ut-chart-head__title {
+  font-size: 0.8125rem;
+}
+
+.obser-shell .ut-chart-head__live {
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.obser-shell .ut-sidebar__text--sm {
+  font-size: 0.6875rem;
+  margin: 0.15rem 0;
+}
+
+.obser-shell .ut-perf-stats--compact {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  gap: 0.35rem;
+}
+
+.obser-shell .ut-perf-stats--compact .ut-perf-stat__label {
+  font-size: 0.625rem;
+}
+
+.obser-shell .ut-perf-stats--compact .ut-perf-stat__value {
+  font-size: 0.75rem;
+}
+
+.obser-shell .ut-sidebar--compact .ut-sidebar__title {
+  font-size: 0.8125rem;
+  margin-bottom: 0.35rem;
+}
+
+.obser-shell .ut-sidebar--compact .ut-sidebar__text {
+  font-size: 0.75rem;
+}
+
+.obser-shell .ut-input--sm {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8125rem;
+}
+
 .noc-identity-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));

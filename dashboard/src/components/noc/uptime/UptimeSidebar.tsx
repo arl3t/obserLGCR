@@ -6,6 +6,7 @@ interface UptimeSidebarProps {
   onRefresh?: () => void;
   refreshing?: boolean;
   showAgentCta?: boolean;
+  compact?: boolean;
 }
 
 export function UptimeSidebar({
@@ -14,6 +15,7 @@ export function UptimeSidebar({
   onRefresh,
   refreshing,
   showAgentCta = true,
+  compact = false,
 }: UptimeSidebarProps) {
   const sites = [...new Set(devices.map((d) => d.site).filter(Boolean))] as string[];
   const primarySite = sites[0] ?? "default";
@@ -28,7 +30,7 @@ export function UptimeSidebar({
   const openAlerts = alerts.filter((a) => a.status === "open");
 
   return (
-    <aside className="ut-sidebar" aria-label="Panel lateral">
+    <aside className={compact ? "ut-sidebar ut-sidebar--compact" : "ut-sidebar"} aria-label="Panel lateral">
       {showAgentCta && (
         <article className="ut-card ut-premium">
           <h2 className="ut-sidebar__title">
@@ -46,6 +48,7 @@ export function UptimeSidebar({
         </article>
       )}
 
+      {!compact && (
       <article className="ut-card">
         <h2 className="ut-sidebar__title">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -68,7 +71,9 @@ export function UptimeSidebar({
           </button>
         )}
       </article>
+      )}
 
+      {!compact && (
       <article className="ut-card">
         <h2 className="ut-sidebar__title">Regions</h2>
         <div
@@ -87,8 +92,9 @@ export function UptimeSidebar({
           </p>
         )}
       </article>
+      )}
 
-      <article className="ut-card">
+      <article className={compact ? "ut-card ut-card--compact" : "ut-card"}>
         <h2 className="ut-sidebar__title">Notificaciones</h2>
         <p className="ut-sidebar__text">Alertas activas en la flota:</p>
         <ul className="ut-notify">

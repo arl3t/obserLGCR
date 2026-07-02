@@ -35,6 +35,7 @@ import { assetRegistryRouter } from "./routes/assetRegistry.mjs";
 import nocRouter from "./routes/noc.mjs";
 import authRouter from "./routes/auth.mjs";
 import platformUsersRouter from "./routes/platformUsers.mjs";
+import agentCredentialsRouter from "./routes/agentCredentials.mjs";
 import detectionRouter, { detectionIngestRouter } from "./routes/detection.mjs";
 import { runNocHeartbeatWatcher } from "./services/nocHeartbeatWatcher.mjs";
 import { primeCatalogCache } from "./services/sourceLogCatalog.mjs";
@@ -121,6 +122,7 @@ app.use("/api/assets", assetRegistryRouter());
 // NOC — monitoreo de infraestructura (heartbeat de agentes sin requireAuth global)
 app.use("/api/auth", authRouter());
 app.use("/api/users", platformUsersRouter());
+app.use("/api/agents", agentCredentialsRouter());
 app.use("/api/noc", nocRouter());
 app.use("/api/inventory", inventoryRouter());
 

@@ -131,6 +131,8 @@ export function SnmpSettingsSection() {
         <div>
           <p className="mb-4 text-xs text-muted-foreground">
             Communities para polling Telegraf y descubrimiento automático de activos en segmentos de red.
+            El JWT de Telegraf se obtiene con las credenciales de agente en la sección{" "}
+            <strong>Registro de activos</strong> (arriba).
           </p>
           {snmpQ.isLoading ? (
             <p className="text-xs text-muted-foreground">Cargando…</p>

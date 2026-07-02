@@ -143,7 +143,15 @@ export function NocDeviceDetail() {
             {device.agent_version ? ` · agente v${device.agent_version}` : " · sin agente"}
           </p>
         </header>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <button
+            type="button"
+            className="ut-btn ut-btn--outline ut-btn--sm"
+            onClick={() => void load()}
+            disabled={refreshing}
+          >
+            Actualizar
+          </button>
           {canDelete && (
             <button
               type="button"
@@ -190,6 +198,7 @@ export function NocDeviceDetail() {
           refreshing={refreshing}
           hideOperations
           hideHeader
+          compact
           thresholds={
             <DeviceThresholdsPanel
               device={device}

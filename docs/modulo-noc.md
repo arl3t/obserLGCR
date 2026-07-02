@@ -2,6 +2,8 @@
 
 **NOC** (Network Operations Center) monitorea disponibilidad y rendimiento de dispositivos de infraestructura mediante agentes ligeros.
 
+Guía operativa (instalación, credenciales, inventario, troubleshooting): [registro-activos.md](registro-activos.md).
+
 Portado desde el proyecto lgcrTI (módulo NOC).
 
 ## Ruta
@@ -130,6 +132,17 @@ Scripts en `dashboard/public/agents/`:
 
 ### Linux
 
+**Dependencias en el host:** `curl`, `jq` (y `ping` para RTT). Si `--setup` falla con *Dependencias faltantes: jq*:
+
+```bash
+# Ubuntu / Debian
+sudo apt update && sudo apt install -y curl jq iputils-ping
+```
+
+Ver [instalacion.md](instalacion.md#7-agente-noc-en-servidores-remotos) para otras distros.
+
+**Cambiar password del agente:** en **Config** → `/admin/settings` → *Registro de activos*, o vía CLI `docker compose exec api node scripts/seed-noc-agent.mjs …`; en el host, actualizar `AGENT_PASS` en `/etc/obserlgcr/noc-agent.env` o repetir `--setup`.
+
 ```bash
 curl -O http://localhost:8080/agents/obserlgcr-noc-agent-linux.sh
 chmod +x obserlgcr-noc-agent-linux.sh
@@ -137,6 +150,36 @@ sudo ./obserlgcr-noc-agent-linux.sh --setup
 ```
 
 Config: `/etc/obserlgcr/noc-agent.env` (600), token en `/etc/obserlgcr/agent.token`, cron cada 5 min.
+
+#### Inventario de software (v2.1+)
+
+Además del heartbeat, el agente Linux envía inventario hardware/software a `POST /api/inventory/report`:
+
+| Qué recoge | Fuente en el host |
+|------------|-------------------|
+| Identidad (hostname, IP, MAC, OS, kernel) | `/etc/os-release`, `uname`, `machine-id` |
+| Hardware (CPU, RAM) | `/proc/cpuinfo`, `/proc/meminfo` |
+| Software instalado | `dpkg-query` (Debian/Ubuntu) o `rpm -qa` (RHEL) |
+| Particiones | `df -PkT` |
+| Puertos en escucha | `ss -H -lntu` |
+| Servicios activos | `systemctl list-units --state=running` |
+
+| Variable en `noc-agent.env` | Default | Descripción |
+|-----------------------------|---------|-------------|
+| `INVENTORY_ENABLED` | `true` | Activar reporte de inventario |
+| `INVENTORY_INTERVAL_SECS` | `21600` (6 h) | Intervalo entre reportes completos |
+| `INVENTORY_MAX_PACKAGES` | `5000` | Máximo de paquetes por reporte |
+
+Comandos útiles en el host monitoreado:
+
+```bash
+sudo ./obserlgcr-noc-agent-linux.sh --inventory   # forzar inventario ahora
+sudo ./obserlgcr-noc-agent-linux.sh --status      # ver último inventario enviado
+```
+
+Tras el reporte, el software aparece en **NOC → detalle del dispositivo → Inventario** y en **Detección → Activos**.
+
+> **IPAM / puertos externos:** el inventario del agente lista puertos locales (`ss`). Los datos IPAM (subred, discovery nmap) requieren configurar el módulo Detección por separado.
 
 ### macOS (Apple Silicon M4)
 
@@ -171,6 +214,7 @@ Comandos: `-Setup`, `-Renew`, `-Status`, `-Uninstall`, `-Help`.
 | Comando | Descripción |
 |---------|-------------|
 | `--setup` / `-Setup` | URL, credenciales, agenda (cron/launchd/tarea programada) |
+| `--inventory` | Forzar reporte de inventario (solo Linux v2.1+) |
 | `--renew` / `-Renew` | Renovar JWT |
 | `--status` / `-Status` | Token, agenda, device ID |
 | `--uninstall` / `-Uninstall` | Quitar agenda y archivos locales |
@@ -199,7 +243,8 @@ El agente recoge acciones vía `GET /api/noc/agent/actions?device_id=…&status=
 
 ```
 Agente → POST /api/auth/token (PostgreSQL) → JWT
-Agente → POST /api/noc/heartbeat (Bearer JWT) → Postgres
+Agente → POST /api/noc/heartbeat (Bearer JWT) → Postgres (registro + métricas)
+Agente → POST /api/inventory/report (Bearer JWT, cada 6 h) → software/hardware
 Agente → GET /api/noc/agent/actions → ejecuta → PATCH resultado
 Watcher (30s) → detecta caídas → noc_alerts
 Operador → /noc → ve alertas y dispositivos

@@ -8,8 +8,9 @@
 # Fallback legacy: NOC_AGENT_TOKEN estático en agent.env
 #
 # Uso:
-#   ./obserlgcr-noc-agent-linux.sh              → heartbeat + acciones (cron)
+#   ./obserlgcr-noc-agent-linux.sh              → heartbeat + inventario (cron) + acciones
 #   ./obserlgcr-noc-agent-linux.sh --setup      → configurar credenciales y cron
+#   ./obserlgcr-noc-agent-linux.sh --inventory  → forzar reporte de inventario ahora
 #   ./obserlgcr-noc-agent-linux.sh --renew      → renovar JWT
 #   ./obserlgcr-noc-agent-linux.sh --status     → estado token y agenda
 #   ./obserlgcr-noc-agent-linux.sh --uninstall  → quitar agenda y archivos locales
@@ -28,7 +29,11 @@ TOKEN_EXPIRES="${TOKEN_EXPIRES:-24h}"
 TOKEN_FILE="${TOKEN_FILE:-/etc/obserlgcr/agent.token}"
 LOG_FILE="${LOG_FILE:-/var/log/obserlgcr-noc-agent.log}"
 NOC_DEVICE_FILE="${NOC_DEVICE_FILE:-/etc/obserlgcr/noc_device_id}"
-AGENT_VERSION="2.0.0"
+INVENTORY_LAST_FILE="${INVENTORY_LAST_FILE:-/etc/obserlgcr/inventory_last_at}"
+INVENTORY_ENABLED="${INVENTORY_ENABLED:-true}"
+INVENTORY_INTERVAL_SECS="${INVENTORY_INTERVAL_SECS:-21600}"
+INVENTORY_MAX_PACKAGES="${INVENTORY_MAX_PACKAGES:-5000}"
+AGENT_VERSION="2.1.0"
 CRON_SCHEDULE="*/5 * * * *"
 MAX_LOG_BYTES="${MAX_LOG_BYTES:-5242880}"
 JITTER_MAX="${JITTER_MAX:-120}"
@@ -53,7 +58,17 @@ check_deps() {
   for cmd in curl jq; do command -v "$cmd" &>/dev/null || missing+=("$cmd"); done
   if [[ ${#missing[@]} -gt 0 ]]; then
     err "Dependencias faltantes: ${missing[*]}"
+    info "Ubuntu/Debian: sudo apt update && sudo apt install -y curl jq iputils-ping"
     exit 1
+  fi
+}
+
+normalize_url() {
+  local url="$1"
+  if [[ "$url" =~ ^https?:// ]]; then
+    echo "$url"
+  else
+    echo "http://$url"
   fi
 }
 
@@ -183,6 +198,179 @@ collect_disk() {
     jq -n --arg mp "$mp" --arg dev "$dev" --argjson size "$size" --argjson used "$used" --argjson pct "$pct" \
       '{mountpoint:$mp,device:$dev,total_bytes:($size*1024),used_bytes:($used*1024),usage_pct:$pct}'
   done | jq -s '.' 2>/dev/null || echo "[]")
+}
+
+collect_os_info() {
+  if [[ -f /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    source /etc/os-release
+    INV_OS_NAME="${NAME:-Linux}"
+    INV_OS_VERSION="${VERSION_ID:-${VERSION:-}}"
+  else
+    INV_OS_NAME="Linux"
+    INV_OS_VERSION="$(uname -r)"
+  fi
+  INV_OS_ARCH=$(uname -m 2>/dev/null || echo "")
+  INV_KERNEL=$(uname -r 2>/dev/null || echo "")
+  INV_UUID=$(cat /etc/machine-id 2>/dev/null || cat /var/lib/dbus/machine-id 2>/dev/null || echo "")
+  INV_CPU_MODEL=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ //' || echo "")
+  INV_CPU_CORES=$(nproc 2>/dev/null || echo 1)
+  INV_RAM_MB=$(awk '/^MemTotal:/ {printf "%d", int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+}
+
+collect_inventory_software_json() {
+  local max="${INVENTORY_MAX_PACKAGES:-5000}"
+  local jq_filter='split("\n") | map(select(length>0)) | map(split("\t")) |
+    map({name: .[0], version: (if length>1 then .[1] else "" end)}) | .[0:$max]'
+  if command -v dpkg-query &>/dev/null; then
+    dpkg-query -W -f='${Package}\t${Version}\n' 2>/dev/null \
+      | head -n "$((max + 1))" \
+      | jq -R -s --argjson max "$max" "$jq_filter" 2>/dev/null || echo "[]"
+  elif command -v rpm &>/dev/null; then
+    rpm -qa --qf '%{NAME}\t%{VERSION}-%{RELEASE}\n' 2>/dev/null \
+      | head -n "$((max + 1))" \
+      | jq -R -s --argjson max "$max" "$jq_filter" 2>/dev/null || echo "[]"
+  else
+    echo "[]"
+  fi
+}
+
+collect_inventory_partitions_json() {
+  df -PkT 2>/dev/null | awk 'NR>1 && $1 !~ /^\/dev\/loop/ {
+    printf "%s\t%s\t%s\t%s\t%s\n", $1, $2, $7, $3, $4
+  }' | jq -R -s '
+    split("\n") | map(select(length>0)) | map(split("\t")) |
+    map({
+      device: .[0],
+      fstype: .[1],
+      mountpoint: .[2],
+      size_bytes: ((.[3]|tonumber) * 1024),
+      used_bytes: ((.[4]|tonumber) * 1024)
+    })' 2>/dev/null || echo "[]"
+}
+
+collect_inventory_ports_json() {
+  if command -v ss &>/dev/null; then
+    ss -H -lntu 2>/dev/null | awk '{
+      proto=$1; split($4, parts, ":");
+      port=parts[length(parts)]; addr=$4;
+      gsub(/%[a-zA-Z0-9]+/, "", addr);
+      printf "%s\t%s\t%s\n", proto, addr, port
+    }' | jq -R -s '
+      split("\n") | map(select(length>0)) | map(split("\t")) |
+      map({proto: .[0], local_addr: .[1], port: (.[2]|tonumber)}) | .[0:500]' 2>/dev/null || echo "[]"
+  else
+    echo "[]"
+  fi
+}
+
+collect_inventory_services_json() {
+  if command -v systemctl &>/dev/null; then
+    systemctl list-units --type=service --state=running --no-pager --no-legend 2>/dev/null \
+      | awk '{print $1"\trunning"}' \
+      | jq -R -s '
+        split("\n") | map(select(length>0)) | map(split("\t")) |
+        map({name: .[0], state: .[1]}) | .[0:300]' 2>/dev/null || echo "[]"
+  else
+    echo "[]"
+  fi
+}
+
+inventory_due() {
+  [[ "${INVENTORY_ENABLED:-true}" == "false" ]] && return 1
+  [[ ! -f "$INVENTORY_LAST_FILE" ]] && return 0
+  local last now interval
+  last=$(cat "$INVENTORY_LAST_FILE" 2>/dev/null || echo 0)
+  now=$(date +%s)
+  interval="${INVENTORY_INTERVAL_SECS:-21600}"
+  [[ $((now - last)) -ge interval ]]
+}
+
+mark_inventory_sent() {
+  local dir ts; dir=$(dirname "$INVENTORY_LAST_FILE"); ts=$(date +%s)
+  if { sudo mkdir -p "$dir" 2>/dev/null && echo "$ts" | sudo tee "$INVENTORY_LAST_FILE" >/dev/null; }; then
+    return 0
+  fi
+  mkdir -p "$dir"
+  echo "$ts" > "$INVENTORY_LAST_FILE"
+}
+
+send_inventory_report() {
+  local token="$1"
+  collect_os_info
+
+  local sw_json parts_json ports_json services_json payload
+  sw_json=$(collect_inventory_software_json)
+  parts_json=$(collect_inventory_partitions_json)
+  ports_json=$(collect_inventory_ports_json)
+  services_json=$(collect_inventory_services_json)
+
+  payload=$(jq -n \
+    --arg sv "3" \
+    --arg at "noc-agent" \
+    --arg av "$AGENT_VERSION" \
+    --arg hostname "$HOSTNAME_VAL" \
+    --arg mac "${MAC_ADDRESS:-}" \
+    --arg ip "${IP_ADDRESS:-}" \
+    --arg os_name "$INV_OS_NAME" \
+    --arg os_version "$INV_OS_VERSION" \
+    --arg os_arch "$INV_OS_ARCH" \
+    --arg kernel "$INV_KERNEL" \
+    --arg uuid "$INV_UUID" \
+    --arg cpu_model "${INV_CPU_MODEL:-}" \
+    --argjson cpu_cores "${INV_CPU_CORES:-1}" \
+    --argjson ram_mb "${INV_RAM_MB:-0}" \
+    --argjson software "$sw_json" \
+    --argjson partitions "$parts_json" \
+    --argjson ports "$ports_json" \
+    --argjson services "$services_json" \
+    '{
+      schema_version: $sv,
+      agent_type: $at,
+      agent_version: $av,
+      identity: {
+        hostname: $hostname,
+        primary_mac: $mac,
+        ip_address: $ip,
+        os_name: $os_name,
+        os_version: $os_version,
+        os_arch: $os_arch,
+        kernel: $kernel,
+        uuid: (if $uuid != "" then $uuid else null end)
+      },
+      hardware: {
+        cpu_model: (if $cpu_model != "" then $cpu_model else null end),
+        cpu_cores: $cpu_cores,
+        ram_mb: $ram_mb
+      },
+      software: $software,
+      partitions: $partitions,
+      ports: $ports,
+      services: $services
+    }')
+
+  local response http_code body sw_count
+  response=$(curl -s -w "\n%{http_code}" -X POST "$OBSERLGCR_URL/api/inventory/report" \
+    -H "Content-Type: application/json" -H "$(auth_header "$token")" -d "$payload" \
+    --connect-timeout 10 --max-time 120) || { warn "Inventario: sin conexión"; return 1; }
+
+  http_code=$(echo "$response" | tail -1)
+  body=$(echo "$response" | sed '$d')
+
+  if [[ "$http_code" == "200" || "$http_code" == "201" ]]; then
+    sw_count=$(echo "$sw_json" | jq 'length' 2>/dev/null || echo 0)
+    mark_inventory_sent
+    ok "Inventario | paquetes=$sw_count host=$HOSTNAME_VAL"
+    log "INV_REPORT host=$HOSTNAME_VAL packages=$sw_count"
+  elif [[ "$http_code" == "401" ]]; then
+    warn "Token expirado (inventario), renovando..."
+    local new_token; new_token=$(get_token) || return 1
+    save_token "$new_token"
+    send_inventory_report "$new_token"
+  else
+    err "Inventario HTTP $http_code: $body"
+    return 1
+  fi
 }
 
 send_heartbeat() {
@@ -318,12 +506,18 @@ cmd_run() {
   fi
   collect_base
   send_heartbeat "$token" || true
+  if [[ "${FORCE_INVENTORY:-0}" == "1" ]] || inventory_due; then
+    send_inventory_report "$token" || true
+  fi
   poll_actions "$token" || true
 }
 
 cmd_setup() {
   echo -e "\n${BOLD}obserLGCR — Agente NOC Linux v${AGENT_VERSION}${RESET}\n"
-  read -rp "  URL del servidor [$OBSERLGCR_URL]: " url; [[ -n "$url" ]] && OBSERLGCR_URL="$url"
+  read -rp "  URL del servidor [$OBSERLGCR_URL]: " url
+  if [[ -n "$url" ]]; then
+    OBSERLGCR_URL=$(normalize_url "$url")
+  fi
   echo -n "  Email del agente [noc-agent@obserlgcr.local]: "
   read -r email; AGENT_EMAIL="${email:-noc-agent@obserlgcr.local}"
   echo -n "  Password del agente: "
@@ -339,6 +533,8 @@ AGENT_EMAIL=$AGENT_EMAIL
 AGENT_PASS=$AGENT_PASS
 NOC_AGENT_TOKEN=$NOC_AGENT_TOKEN
 TOKEN_EXPIRES=$TOKEN_EXPIRES
+INVENTORY_ENABLED=true
+INVENTORY_INTERVAL_SECS=21600
 EOF
     sudo chmod 600 "$ENV_FILE"
     ok "Config en $ENV_FILE (600)"
@@ -350,6 +546,8 @@ AGENT_EMAIL=$AGENT_EMAIL
 AGENT_PASS=$AGENT_PASS
 NOC_AGENT_TOKEN=$NOC_AGENT_TOKEN
 TOKEN_EXPIRES=$TOKEN_EXPIRES
+INVENTORY_ENABLED=true
+INVENTORY_INTERVAL_SECS=21600
 EOF
     chmod 600 "$ENV_FILE"
   fi
@@ -361,6 +559,8 @@ EOF
   setup_cron
   collect_base
   send_heartbeat "$token"
+  info "Enviando inventario inicial..."
+  FORCE_INVENTORY=1 send_inventory_report "$token" || warn "Inventario inicial falló; reintentará en el próximo ciclo"
   ok "Configuración completada."
 }
 
@@ -375,6 +575,19 @@ cmd_status() {
     ok "Cron activo"; crontab -l | grep obserlgcr-noc-agent
   else warn "Sin cron. Ejecutar: $0 --setup"; fi
   [[ -f "$NOC_DEVICE_FILE" ]] && info "Device ID: $(cat "$NOC_DEVICE_FILE")"
+  if [[ -f "$INVENTORY_LAST_FILE" ]]; then
+    local last_human last_ts now interval next_in
+    last_ts=$(cat "$INVENTORY_LAST_FILE" 2>/dev/null || echo 0)
+    last_human=$(date -d "@$last_ts" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -r "$last_ts" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "$last_ts")
+    info "Último inventario: $last_human"
+    interval="${INVENTORY_INTERVAL_SECS:-21600}"
+    now=$(date +%s)
+    next_in=$((interval - (now - last_ts)))
+    [[ $next_in -lt 0 ]] && next_in=0
+    info "Próximo inventario: ~$((next_in / 60)) min (intervalo ${interval}s)"
+  else
+    warn "Sin inventario enviado aún. Ejecutar: $0 --inventory"
+  fi
 }
 
 cmd_renew() {
@@ -389,14 +602,26 @@ cmd_uninstall() {
   ok "Agente desinstalado (archivos locales)."
 }
 
+cmd_inventory() {
+  local token; token=$(load_token)
+  if ! token_valid "$token"; then
+    info "Obteniendo token..."
+    token=$(get_token) || exit 1
+    save_token "$token"
+  fi
+  collect_base
+  FORCE_INVENTORY=1 send_inventory_report "$token"
+}
+
 check_deps
 case "${1:-}" in
   --setup)     cmd_setup ;;
   --renew)     cmd_renew ;;
   --status)    cmd_status ;;
+  --inventory) cmd_inventory ;;
   --uninstall) cmd_uninstall ;;
   --help|-h)
-    echo "Uso: $(basename "$0") [--setup|--renew|--status|--uninstall]"
+    echo "Uso: $(basename "$0") [--setup|--renew|--status|--inventory|--uninstall]"
     ;;
   *) cmd_run ;;
 esac

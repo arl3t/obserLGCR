@@ -16,6 +16,7 @@ import {
 import { MetricChart } from "./MetricChart";
 import { UptimeBars } from "./UptimeBars";
 import { UptimeSidebar } from "./UptimeSidebar";
+import { cn } from "@/lib/utils";
 
 export interface DeviceDetail {
   id: string;
@@ -45,6 +46,7 @@ interface DeviceUptimeMonitorProps {
   operations?: ReactNode;
   hideOperations?: boolean;
   hideHeader?: boolean;
+  compact?: boolean;
 }
 
 export function DeviceUptimeMonitor({
@@ -62,6 +64,7 @@ export function DeviceUptimeMonitor({
   operations,
   hideOperations = false,
   hideHeader = false,
+  compact = false,
 }: DeviceUptimeMonitorProps) {
   const st = statusWord(device.status);
   const bars = buildUptimeBarsFromAlerts(
@@ -75,6 +78,7 @@ export function DeviceUptimeMonitor({
   );
   const pct24 = uptimePercentFromBars(bars);
   const isDown = device.status === "offline" || device.status === "degraded";
+  const openCount = alerts.filter((a) => a.status === "open").length;
 
   const deviceAlerts = alerts.map((a) => ({
     alert_type: a.alert_type,
@@ -106,7 +110,7 @@ export function DeviceUptimeMonitor({
       cpu_pct: null,
       mem_pct: null,
       rtt_ms: null,
-      open_alerts: alerts.filter((a) => a.status === "open").length,
+      open_alerts: openCount,
       heartbeat_timeout_secs: device.heartbeat_timeout_secs,
     },
   ];
@@ -116,6 +120,8 @@ export function DeviceUptimeMonitor({
     hostname: device.hostname,
     device_id: device.id,
   }));
+
+  const useCompact = compact || hideHeader;
 
   return (
     <>
@@ -144,104 +150,92 @@ export function DeviceUptimeMonitor({
         </div>
       )}
 
-      <div className="ut-layout">
-        <div className="ut-main">
-          <section className="ut-metrics" aria-labelledby="device-status">
+      <div className={cn("ut-layout", useCompact && "ut-layout--salud-compact")}>
+        <div className={cn("ut-main", useCompact && "ut-main--salud-compact")}>
+          {thresholds}
+
+          <section className="ut-card ut-card--compact noc-salud-status" aria-labelledby="device-status">
             <h2 id="device-status" className="ut-visually-hidden">
               Métricas de estado
             </h2>
 
-            <article className="ut-card">
-              <p className="ut-card__label">Estado actual</p>
-              <p
-                className={`ut-metric__value ut-metric__value--${st.tone === "muted" ? "success" : st.tone}`}
-              >
-                {st.label}
-              </p>
-              <p className="ut-metric__sub">{upSince}</p>
-            </article>
-
-            <article className="ut-card">
-              <p className="ut-card__label">Último chequeo</p>
-              <p className="ut-metric__value">{formatAgo(device.last_seen_at)}</p>
-              <p className="ut-metric__sub">
-                Timeout <strong>{device.heartbeat_timeout_secs}s</strong> · heartbeat cada{" "}
-                <strong>5 min</strong>
-              </p>
-            </article>
-
-            <article className="ut-card">
-              <p className="ut-card__label">Últimas 24 h</p>
-              <p
-                className={`ut-metric__value ${pct24 >= 99.5 ? "ut-metric__value--success" : "ut-metric__value--warning"}`}
-              >
-                {pct24}%
-              </p>
-              <UptimeBars bars={bars} />
-            </article>
-          </section>
-
-          <section aria-labelledby="device-history">
-            <h2 id="device-history" className="ut-visually-hidden">
-              Historial
-            </h2>
-            <div className="ut-history">
-              <article className="ut-card">
-                <p className="ut-card__label">7 días</p>
+            <div className="noc-salud-status__primary">
+              <div className="noc-salud-status__cell">
+                <p className="ut-card__label">Estado</p>
+                <p className={cn("noc-salud-status__value", `noc-salud-status__value--${st.tone}`)}>
+                  {st.label}
+                </p>
+                <p className="noc-salud-status__sub">{upSince}</p>
+              </div>
+              <div className="noc-salud-status__cell">
+                <p className="ut-card__label">Último chequeo</p>
+                <p className="noc-salud-status__value noc-salud-status__value--sm">
+                  {formatAgo(device.last_seen_at)}
+                </p>
+                <p className="noc-salud-status__sub">
+                  Timeout {device.heartbeat_timeout_secs}s · HB 5 min
+                </p>
+              </div>
+              <div className="noc-salud-status__cell noc-salud-status__cell--uptime">
+                <p className="ut-card__label">24 h</p>
                 <p
-                  className={`ut-history__value ${w7.pct >= 99.5 ? "ut-metric__value--success" : "ut-metric__value--warning"}`}
+                  className={cn(
+                    "noc-salud-status__value",
+                    pct24 >= 99.5 ? "noc-salud-status__value--success" : "noc-salud-status__value--warning",
+                  )}
                 >
+                  {pct24}%
+                </p>
+                <UptimeBars bars={bars} compact />
+              </div>
+            </div>
+
+            <div className="noc-salud-pills" aria-label="Historial">
+              <span className="noc-salud-pill">
+                <span className="noc-salud-pill__label">7 d</span>
+                <span className={cn("noc-salud-pill__val", w7.pct >= 99.5 ? "text-emerald-400" : "text-amber-400")}>
                   {w7.pct}%
-                </p>
-                <p className="ut-history__detail">
-                  {w7.incidents} incidente{w7.incidents !== 1 ? "s" : ""}
-                </p>
-              </article>
-              <article className="ut-card">
-                <p className="ut-card__label">30 días</p>
-                <p
-                  className={`ut-history__value ${w30.pct >= 99 ? "ut-metric__value--success" : "ut-metric__value--warning"}`}
-                >
+                </span>
+                <span className="noc-salud-pill__meta">{w7.incidents} inc.</span>
+              </span>
+              <span className="noc-salud-pill">
+                <span className="noc-salud-pill__label">30 d</span>
+                <span className={cn("noc-salud-pill__val", w30.pct >= 99 ? "text-emerald-400" : "text-amber-400")}>
                   {w30.pct}%
-                </p>
-                <p
-                  className={`ut-history__detail ${w30.incidents > 0 ? "ut-history__detail--warning" : ""}`}
-                >
+                </span>
+                <span className="noc-salud-pill__meta">
                   {w30.incidents > 0
-                    ? `${w30.incidents} caída${w30.incidents !== 1 ? "s" : ""} · ${formatDuration(w30.downtimeSecs)}`
-                    : "Sin caídas registradas"}
-                </p>
-              </article>
-              <article className="ut-card">
-                <p className="ut-card__label">Alertas abiertas</p>
-                <p
-                  className={`ut-history__value ${alerts.filter((a) => a.status === "open").length > 0 ? "ut-metric__value--warning" : "ut-metric__value--success"}`}
-                >
-                  {alerts.filter((a) => a.status === "open").length}
-                </p>
-                <p className="ut-history__detail">{device.description ?? "Sin descripción"}</p>
-              </article>
-            </div>
-            <div className="ut-mtbf" role="status">
-              <p className="ut-mtbf__label">MTBF (Mean Time Between Failures)</p>
-              <p className="ut-mtbf__value">{mtbf != null ? `${mtbf} días` : "—"}</p>
+                    ? `${w30.incidents} caídas · ${formatDuration(w30.downtimeSecs)}`
+                    : "sin caídas"}
+                </span>
+              </span>
+              <span className="noc-salud-pill">
+                <span className="noc-salud-pill__label">Alertas</span>
+                <span className={cn("noc-salud-pill__val", openCount > 0 ? "text-amber-400" : "text-emerald-400")}>
+                  {openCount}
+                </span>
+                <span className="noc-salud-pill__meta">abiertas</span>
+              </span>
+              <span className="noc-salud-pill">
+                <span className="noc-salud-pill__label">MTBF</span>
+                <span className="noc-salud-pill__val">{mtbf != null ? `${mtbf}d` : "—"}</span>
+              </span>
             </div>
           </section>
 
-          {thresholds}
-
-          <div className="noc-metrics-grid">
-            <section className="ut-card">
+          <div className={cn("noc-metrics-grid", useCompact && "noc-metrics-grid--compact")}>
+            <section className="ut-card ut-card--compact">
               <MetricChart
-                title="Latencia (RTT)"
+                title="Latencia"
                 unit="ms"
                 points={rttPoints}
                 loading={rttLoading}
                 gradientId="utRttGrad"
                 lineColor="#60a5fa"
+                compact={useCompact}
               />
             </section>
-            <section className="ut-card">
+            <section className="ut-card ut-card--compact">
               <MetricChart
                 title="CPU"
                 unit="%"
@@ -250,9 +244,10 @@ export function DeviceUptimeMonitor({
                 gradientId="utCpuGrad"
                 lineColor="#34d399"
                 yTickFormatter={(v) => `${v}%`}
+                compact={useCompact}
               />
             </section>
-            <section className="ut-card">
+            <section className="ut-card ut-card--compact">
               <MetricChart
                 title="Memoria"
                 unit="%"
@@ -261,13 +256,14 @@ export function DeviceUptimeMonitor({
                 gradientId="utMemGrad"
                 lineColor="#a78bfa"
                 yTickFormatter={(v) => `${v}%`}
+                compact={useCompact}
               />
             </section>
           </div>
 
           {!hideOperations && operations && (
-            <section className="ut-card ut-ops" aria-labelledby="device-ops">
-              <h2 id="device-ops" className="ut-chart-head__title" style={{ marginBottom: "0.75rem" }}>
+            <section className="ut-card ut-card--compact ut-ops" aria-labelledby="device-ops">
+              <h2 id="device-ops" className="ut-chart-head__title" style={{ marginBottom: "0.5rem" }}>
                 Operaciones
               </h2>
               {operations}
@@ -275,7 +271,12 @@ export function DeviceUptimeMonitor({
           )}
         </div>
 
-        <UptimeSidebar devices={sidebarDevices} alerts={sidebarAlerts} showAgentCta={false} />
+        <UptimeSidebar
+          devices={sidebarDevices}
+          alerts={sidebarAlerts}
+          showAgentCta={false}
+          compact={useCompact}
+        />
       </div>
     </>
   );

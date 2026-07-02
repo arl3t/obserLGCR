@@ -1,5 +1,7 @@
 # NOC — Recolección SNMP con Telegraf
 
+> **Configuración en el dashboard:** `/admin/settings` → *Registro de activos* (email/password JWT) y *SNMP* (communities, descubrimiento por segmento). Ver [registro-activos.md](registro-activos.md).
+
 ## Arquitectura
 
 ```mermaid

@@ -9,7 +9,7 @@ obserLGCR expone cuatro áreas en la navegación principal del dashboard.
 | **NOC** | `/noc` | `NocPage` | `/api/noc`, `/api/inventory` |
 | **Detección** | `/detection` | `DetectionCenter` | `/api/detection`, `/api/v1/ipam` |
 | **Gestión** | `/gestion` | `IncidentManagement` | `/api/incidents`, `/api/operators` |
-| **Config** | `/admin/settings` | `PlatformSettingsPage` | `/api/users` |
+| **Config** | `/admin/settings` | `PlatformSettingsPage` | `/api/users`, `/api/agents`, SNMP UI |
 
 Perfiles de scoring: panel lateral en **Gestión** → menú *Scoring* (`/api/scoring-profiles`).
 
@@ -71,7 +71,12 @@ Panel operativo SOC respaldado por PostgreSQL:
 
 **Ruta:** `/admin/settings`
 
-Administración de usuarios del dashboard (`platform_users`): alta, roles, habilitar/deshabilitar.
+| Sección | Función |
+|---------|---------|
+| Mi contraseña | Cambio de clave del usuario logueado |
+| Usuarios plataforma | Alta/edición de operadores del dashboard (`platform_users`) |
+| **Registro de activos** | Email/password de agentes NOC, snippets para scripts y URL del API |
+| **SNMP** | Communities, descubrimiento por segmento, registro automático vía SNMP |
 
 ## Registro de activos
 
@@ -79,6 +84,10 @@ Sin página propia en el menú; expuesto en Detección → **Activos** y vía AP
 
 - `GET /api/assets` — sensores/activos
 - `POST /api/assets` — registro
+
+Guía operativa completa: [registro-activos.md](registro-activos.md).
+
+**Descubrimiento nmap:** [descubrimiento-nmap.md](descubrimiento-nmap.md).
 
 ## Redirecciones legacy
 

@@ -1,5 +1,6 @@
 import type { MetricPoint } from "./helpers";
 import { buildChartPath, chartYTicks, rttStats } from "./helpers";
+import { cn } from "@/lib/utils";
 
 interface MetricChartProps {
   title: string;
@@ -11,6 +12,7 @@ interface MetricChartProps {
   yTickFormatter?: (v: number) => string;
   gradientId: string;
   lineColor?: string;
+  compact?: boolean;
 }
 
 export function MetricChart({
@@ -23,30 +25,45 @@ export function MetricChart({
   yTickFormatter = (v) => `${v}${unit}`,
   gradientId,
   lineColor = "#60a5fa",
+  compact = false,
 }: MetricChartProps) {
   const stats = rttStats(points);
   const yTicks = chartYTicks(stats?.max ?? (unit === "%" ? 100 : 800));
   const linePath = buildChartPath(points);
   const areaPath =
     linePath && points.length >= 2 ? `${linePath} L400,200 L0,200 Z` : "";
+  const hasChart = points.length >= 2;
+  const latest = points.length > 0 ? points[points.length - 1] : null;
 
   const ariaLabel = stats
     ? `${title}: promedio ${valueFormatter(stats.avg)} ${unit}`
-    : `Sin datos de ${title}`;
+    : latest
+      ? `${title}: último valor ${valueFormatter(latest.v)} ${unit}`
+      : `Sin datos de ${title}`;
 
   return (
-    <>
-      <div className="ut-chart-head">
+    <div className={compact ? "ut-chart-wrap--compact" : undefined}>
+      <div className="ut-chart-head ut-chart-head--compact">
         <h2 className="ut-chart-head__title">{title}</h2>
-        <span className="ut-chart-head__range">{rangeLabel}</span>
+        {latest && (
+          <span className="ut-chart-head__live" style={{ color: lineColor }}>
+            {valueFormatter(latest.v)}
+            {unit === "%" ? "%" : ` ${unit}`}
+          </span>
+        )}
+        {!compact && <span className="ut-chart-head__range">{rangeLabel}</span>}
       </div>
 
       {loading ? (
-        <p className="ut-sidebar__text">Cargando métricas…</p>
-      ) : points.length < 2 ? (
-        <p className="ut-sidebar__text">Sin muestras en las últimas 24 h.</p>
+        <p className="ut-sidebar__text ut-sidebar__text--sm">Cargando…</p>
+      ) : !hasChart ? (
+        <p className="ut-sidebar__text ut-sidebar__text--sm">
+          {latest
+            ? `1 muestra · sin historial 24 h`
+            : "Sin muestras en las últimas 24 h."}
+        </p>
       ) : (
-        <div className="ut-chart">
+        <div className={cn("ut-chart", compact && "ut-chart--compact")}>
           <ol className="ut-chart__y" aria-hidden="true">
             {yTicks.map((t) => (
               <li key={t}>{yTickFormatter(t)}</li>
@@ -80,34 +97,28 @@ export function MetricChart({
         </div>
       )}
 
-      {stats && (
-        <div className="ut-perf-stats">
+      {stats && hasChart && !compact && (
+        <div className="ut-perf-stats ut-perf-stats--compact">
           <div className="ut-perf-stat">
-            <div>
-              <p className="ut-perf-stat__label">Promedio</p>
-              <p className="ut-perf-stat__value">
-                {valueFormatter(stats.avg)} {unit}
-              </p>
-            </div>
+            <p className="ut-perf-stat__label">Avg</p>
+            <p className="ut-perf-stat__value">
+              {valueFormatter(stats.avg)}{unit === "%" ? "%" : ` ${unit}`}
+            </p>
           </div>
           <div className="ut-perf-stat">
-            <div>
-              <p className="ut-perf-stat__label">Mínimo</p>
-              <p className="ut-perf-stat__value">
-                {valueFormatter(stats.min)} {unit}
-              </p>
-            </div>
+            <p className="ut-perf-stat__label">Min</p>
+            <p className="ut-perf-stat__value">
+              {valueFormatter(stats.min)}{unit === "%" ? "%" : ` ${unit}`}
+            </p>
           </div>
           <div className="ut-perf-stat">
-            <div>
-              <p className="ut-perf-stat__label">Máximo</p>
-              <p className="ut-perf-stat__value">
-                {valueFormatter(stats.max)} {unit}
-              </p>
-            </div>
+            <p className="ut-perf-stat__label">Max</p>
+            <p className="ut-perf-stat__value">
+              {valueFormatter(stats.max)}{unit === "%" ? "%" : ` ${unit}`}
+            </p>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

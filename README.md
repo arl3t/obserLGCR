@@ -10,6 +10,8 @@ Login local por defecto en el dashboard; ver [docs/seguridad.md](docs/seguridad.
 |------|-------------|
 | [Índice de documentación](docs/README.md) | Punto de entrada a toda la documentación |
 | [Instalación](docs/instalacion.md) | Requisitos, Docker, login y verificación |
+| [Registro de activos](docs/registro-activos.md) | Agente NOC, credenciales, inventario, SNMP |
+| [Descubrimiento nmap](docs/descubrimiento-nmap.md) | Host runner y escaneo de red |
 | [Arquitectura](docs/arquitectura.md) | Componentes, flujo de datos y diseño |
 | [Módulos](docs/modulos.md) | NOC, Detección, Gestión y Config |
 | [NOC](docs/modulo-noc.md) | Monitoreo de infraestructura y agentes |
@@ -26,7 +28,7 @@ Login local por defecto en el dashboard; ver [docs/seguridad.md](docs/seguridad.
 | **NOC** | `/noc` | `/api/noc`, `/api/inventory` |
 | **Detección** | `/detection` | `/api/detection`, proxy `/api/v1/ipam` |
 | **Gestión de incidentes** | `/gestion` | `/api/incidents` |
-| **Configuración** | `/admin/settings` | `/api/users`, perfiles en `/api/scoring-profiles` |
+| **Configuración** | `/admin/settings` | `/api/users`, `/api/agents`, SNMP en UI |
 
 Perfiles de scoring IOC y cierre de casos viven dentro de **Gestión** (`/gestion`), no en rutas `/soc` separadas.
 

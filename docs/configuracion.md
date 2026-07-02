@@ -38,9 +38,40 @@ Configuradas en `docker-compose.yml` o vía `.env`:
 | Variable | Default | Descripción |
 |----------|---------|-------------|
 | `IPAM_PORT` | `8790` | Puerto IPAM en el host |
-| `NMAP_TIMEOUT_SEC` | `600` | Timeout escaneo |
-| `NMAP_RUNNER_URL` | `http://host.docker.internal:8791` | Runner nmap en el host |
-| `NMAP_RUNNER_TOKEN` | (ver `.env.example`) | Token runner ↔ IPAM |
+| `NMAP_TIMEOUT_SEC` | `600` | Timeout escaneo completo |
+| `NMAP_HOST_TIMEOUT_SEC` | `5` | Timeout por host |
+| `NMAP_RUNNER_URL` | `http://host.docker.internal:8791` | Runner nmap en el host (vacío = solo contenedor) |
+| `NMAP_RUNNER_TOKEN` | `change-me-nmap-runner` | Token runner ↔ IPAM |
+
+Guía completa: [descubrimiento-nmap.md](descubrimiento-nmap.md).
+
+Variables del runner en el **host** (al ejecutar `nmap-host-runner.py`):
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `NMAP_RUNNER_PORT` | `8791` | Puerto de escucha |
+| `NMAP_RUNNER_BIND` | `0.0.0.0` | Interfaz (debe ser alcanzable desde Docker) |
+| `NMAP_RUNNER_TOKEN` | (igual que `.env`) | Autenticación |
+
+### Agentes NOC y registro de activos
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `AGENT_JWT_SECRET` | dev secret | Firma JWT de agentes (rotar en producción) |
+| `NOC_AGENT_TOKEN` | vacío | Token estático legacy (alternativa a JWT) |
+| `PLATFORM_AUTH_ENABLED` | `true` | Login dashboard |
+
+Las credenciales email/password de agentes viven en PostgreSQL (`agent_credentials`), no en `.env`. Gestionar en **Config → Registro de activos** o `seed-noc-agent.mjs`. Ver [registro-activos.md](registro-activos.md).
+
+Variables en el **host monitoreado** (`/etc/obserlgcr/noc-agent.env`):
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `OBSERLGCR_URL` | — | URL API (`http://IP:8787`) |
+| `AGENT_EMAIL` / `AGENT_PASS` | — | Credencial de agente |
+| `INVENTORY_ENABLED` | `true` | Reporte inventario (Linux v2.1+) |
+| `INVENTORY_INTERVAL_SECS` | `21600` | Intervalo inventario (6 h) |
+| `INVENTORY_MAX_PACKAGES` | `5000` | Máx. paquetes por reporte |
 
 ### Variables de scoring SOC
 

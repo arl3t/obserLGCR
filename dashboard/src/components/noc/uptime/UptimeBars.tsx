@@ -4,16 +4,17 @@ import { uptimePercentFromBars } from "./helpers";
 interface UptimeBarsProps {
   bars: BarSegment[];
   label?: string;
+  compact?: boolean;
 }
 
-export function UptimeBars({ bars, label }: UptimeBarsProps) {
+export function UptimeBars({ bars, label, compact = false }: UptimeBarsProps) {
   const pct = uptimePercentFromBars(bars);
   const aria =
     label ??
     `Disponibilidad últimas 24 horas: ${pct} por ciento`;
 
   return (
-    <ul className="ut-bars" role="img" aria-label={aria}>
+    <ul className={compact ? "ut-bars ut-bars--compact" : "ut-bars"} role="img" aria-label={aria}>
       {bars.map((seg, i) => (
         <li
           key={i}

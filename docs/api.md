@@ -199,7 +199,20 @@ Endpoints de inventario/governance NOC (complemento de `/api/noc`).
 ```
 
 Credenciales almacenadas en PostgreSQL (`agent_credentials`, migración `118_noc_agent_auth.sql`).
-Crear agentes: `node api/scripts/seed-noc-agent.mjs email password [nombre]`.
+
+**Gestión desde el dashboard:** `/admin/settings` → *Registro de activos — credenciales de agente* (`GET/PATCH /api/agents`, requiere rol admin).
+
+Crear agentes (CLI): `node api/scripts/seed-noc-agent.mjs email password [nombre]`.
+
+## Credenciales de agentes — `/api/agents`
+
+| Método | Ruta | Rol | Descripción |
+|--------|------|-----|-------------|
+| `GET` | `/` | admin | Listar credenciales de agente |
+| `POST` | `/` | admin | Crear agente (`email`, `password`, `display_name`) |
+| `PATCH` | `/:id` | admin | Actualizar email, password, nombre o `enabled` |
+
+Usadas por: agente NOC (`/api/noc/heartbeat`), inventario (`/api/inventory/report`), shipper detección, SNMP Telegraf (`/api/noc/snmp/ingest`).
 
 ### Login de usuarios (dashboard)
 
