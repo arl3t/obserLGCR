@@ -853,6 +853,249 @@ def _delta_for_ip(ip: str, prev_ips: set[str]) -> str | None:
     return "new" if ip not in prev_ips else "unchanged"
 
 
+CRITICAL_PORT_LABELS: dict[int, str] = {
+    21: "FTP",
+    23: "Telnet",
+    135: "MSRPC",
+    139: "NetBIOS",
+    161: "SNMP",
+    445: "SMB",
+    3389: "RDP",
+    5900: "VNC",
+    6379: "Redis",
+    27017: "MongoDB",
+}
+
+
+def _host_map(db: Session, run_id: int) -> dict[str, NetworkDiscoveryHost]:
+    hosts, _ = list_hosts(db, run_id, limit=5000, offset=0)
+    return {str(h.ip_address): h for h in hosts if h.status == "up"}
+
+
+def compare_runs(db: Session, run_id: int, base_run_id: int | None = None) -> dict[str, Any]:
+    """Delta entre dos runs: hosts/puertos nuevos, desaparecidos y cambios de servicio."""
+    run = db.get(NetworkDiscoveryRun, run_id)
+    if not run:
+        raise ValueError("Run no encontrado")
+
+    if base_run_id is None:
+        base_run_id = _previous_run_id(db, run)
+    base_run = db.get(NetworkDiscoveryRun, base_run_id) if base_run_id else None
+
+    current = _host_map(db, run_id)
+    base = _host_map(db, base_run_id) if base_run_id else {}
+
+    cur_ips = set(current.keys())
+    base_ips = set(base.keys())
+
+    new_ips = sorted(cur_ips - base_ips)
+    removed_ips = sorted(base_ips - cur_ips)
+    common_ips = sorted(cur_ips & base_ips)
+
+    def _open_ports(h: NetworkDiscoveryHost) -> dict[int, NetworkDiscoveryPort]:
+        return {p.port: p for p in h.ports if p.state in ("open", "open|filtered")}
+
+    new_hosts = [
+        {
+            "ip": ip,
+            "hostname": current[ip].hostname,
+            "open_ports": sorted(_open_ports(current[ip]).keys()),
+            "critical_ports": sorted(set(_open_ports(current[ip]).keys()) & CRITICAL_PORTS),
+        }
+        for ip in new_ips
+    ]
+    removed_hosts = [
+        {"ip": ip, "hostname": base[ip].hostname}
+        for ip in removed_ips
+    ]
+
+    changed_hosts: list[dict[str, Any]] = []
+    ports_opened_total = 0
+    ports_closed_total = 0
+    for ip in common_ips:
+        cur_ports = _open_ports(current[ip])
+        base_ports = _open_ports(base[ip])
+        opened = sorted(set(cur_ports) - set(base_ports))
+        closed = sorted(set(base_ports) - set(cur_ports))
+        svc_changes = []
+        for port in sorted(set(cur_ports) & set(base_ports)):
+            cs = cur_ports[port].service or ""
+            bs = base_ports[port].service or ""
+            cv = cur_ports[port].version or ""
+            bv = base_ports[port].version or ""
+            if cs != bs or cv != bv:
+                svc_changes.append(
+                    {
+                        "port": port,
+                        "from": f"{bs} {bv}".strip(),
+                        "to": f"{cs} {cv}".strip(),
+                    },
+                )
+        if opened or closed or svc_changes:
+            ports_opened_total += len(opened)
+            ports_closed_total += len(closed)
+            changed_hosts.append(
+                {
+                    "ip": ip,
+                    "hostname": current[ip].hostname,
+                    "ports_opened": opened,
+                    "ports_closed": closed,
+                    "critical_opened": sorted(set(opened) & CRITICAL_PORTS),
+                    "service_changes": svc_changes,
+                },
+            )
+
+    return {
+        "run_id": run_id,
+        "base_run_id": base_run_id,
+        "has_baseline": base_run is not None,
+        "summary": {
+            "hosts_new": len(new_hosts),
+            "hosts_removed": len(removed_hosts),
+            "hosts_changed": len(changed_hosts),
+            "ports_opened": ports_opened_total,
+            "ports_closed": ports_closed_total,
+            "critical_new": sum(len(h["critical_ports"]) for h in new_hosts)
+            + sum(len(h["critical_opened"]) for h in changed_hosts),
+        },
+        "new_hosts": new_hosts,
+        "removed_hosts": removed_hosts,
+        "changed_hosts": changed_hosts,
+    }
+
+
+def get_critical_alerts(db: Session, run_id: int) -> dict[str, Any]:
+    """Hosts con puertos críticos expuestos en el run."""
+    run = db.get(NetworkDiscoveryRun, run_id)
+    if not run:
+        raise ValueError("Run no encontrado")
+    hosts, _ = list_hosts(db, run_id, limit=5000, offset=0)
+    ips = [str(h.ip_address) for h in hosts if h.status == "up"]
+    noc_map = _noc_lookup(db, ips)
+
+    alerts: list[dict[str, Any]] = []
+    severity_counts: Counter[str] = Counter()
+    for h in hosts:
+        if h.status != "up":
+            continue
+        open_ports = {p.port: p for p in h.ports if p.state in ("open", "open|filtered")}
+        critical = sorted(set(open_ports.keys()) & CRITICAL_PORTS)
+        if not critical:
+            continue
+        ip_str = str(h.ip_address)
+        noc = noc_map.get(ip_str, {})
+        documented = h.documented
+        for port in critical:
+            severity = "high" if port in (3389, 445, 23, 5900, 6379, 27017) else "medium"
+            if not documented:
+                severity = "critical" if severity == "high" else "high"
+            severity_counts[severity] += 1
+            alerts.append(
+                {
+                    "ip": ip_str,
+                    "hostname": h.hostname,
+                    "port": port,
+                    "service": CRITICAL_PORT_LABELS.get(port, open_ports[port].service or "?"),
+                    "product": open_ports[port].product,
+                    "severity": severity,
+                    "documented": documented,
+                    "noc_device_id": noc.get("noc_device_id"),
+                    "noc_open_alerts": noc.get("noc_open_alerts", 0),
+                },
+            )
+
+    sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    alerts.sort(key=lambda a: (sev_order.get(a["severity"], 9), a["ip"], a["port"]))
+    return {
+        "run_id": run_id,
+        "total": len(alerts),
+        "by_severity": dict(severity_counts),
+        "critical_ports": {str(p): CRITICAL_PORT_LABELS.get(p, "?") for p in sorted(CRITICAL_PORTS)},
+        "alerts": alerts,
+    }
+
+
+def _cef_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("|", "\\|").replace("=", "\\=")
+
+
+def export_run_cef(db: Session, run_id: int) -> str:
+    """ArcSight/Wazuh CEF: una línea por host con puertos críticos o CVE."""
+    data = export_run_json(db, run_id)
+    lines: list[str] = []
+    run = data["run"]
+    for h in data["hosts"]:
+        if h["status"] != "up":
+            continue
+        open_ports = [p for p in h["ports"] if p["state"] in ("open", "open|filtered")]
+        critical = sorted({p["port"] for p in open_ports} & CRITICAL_PORTS)
+        vulns = h.get("vulnerabilities") or []
+        if not critical and not vulns:
+            continue
+        severity = 8 if (critical and not h["documented"]) else (6 if critical else 5)
+        name = "Critical port exposure" if critical else "Vulnerability detected"
+        ext = (
+            f"src={h['ip']} "
+            f"dhost={_cef_escape(h['hostname'] or h['ip'])} "
+            f"cs1Label=openPorts cs1={_cef_escape(','.join(str(p['port']) for p in open_ports))} "
+            f"cs2Label=criticalPorts cs2={_cef_escape(','.join(map(str, critical)))} "
+            f"cs3Label=cveCount cs3={len(vulns)} "
+            f"cs4Label=documented cs4={str(h['documented']).lower()} "
+            f"cs5Label=scanRun cs5={run['id']}"
+        )
+        lines.append(
+            f"CEF:0|obserLGCR|discovery|1.0|{name}|{_cef_escape(name)}|{severity}|{ext}",
+        )
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+def export_run_ecs(db: Session, run_id: int) -> list[dict]:
+    """Elastic ECS: documentos NDJSON-friendly, uno por host activo."""
+    data = export_run_json(db, run_id)
+    run = data["run"]
+    docs: list[dict] = []
+    for h in data["hosts"]:
+        if h["status"] != "up":
+            continue
+        open_ports = [p for p in h["ports"] if p["state"] in ("open", "open|filtered")]
+        critical = sorted({p["port"] for p in open_ports} & CRITICAL_PORTS)
+        vulns = h.get("vulnerabilities") or []
+        docs.append(
+            {
+                "@timestamp": run.get("finished_at") or run.get("started_at"),
+                "event": {
+                    "kind": "state",
+                    "category": ["host", "network"],
+                    "module": "obserlgcr_discovery",
+                    "dataset": "discovery.host",
+                },
+                "host": {
+                    "ip": h["ip"],
+                    "hostname": h["hostname"],
+                    "mac": h["mac"],
+                    "os": {"full": h["os_guess"]},
+                },
+                "observer": {"product": "nmap", "vendor": "obserLGCR"},
+                "obserlgcr": {
+                    "run_id": run["id"],
+                    "scan_profile": run["scan_profile"],
+                    "documented": h["documented"],
+                    "open_ports": [p["port"] for p in open_ports],
+                    "critical_ports": critical,
+                    "services": [
+                        {"port": p["port"], "name": p["service"], "product": p["product"], "version": p["version"]}
+                        for p in open_ports
+                    ],
+                    "vulnerabilities": [
+                        {"cve": v["cve_id"], "severity": v["severity"], "cvss": v.get("cvss_score")}
+                        for v in vulns
+                    ],
+                },
+            },
+        )
+    return docs
+
+
 def export_run_json(db: Session, run_id: int) -> dict:
     run = db.get(NetworkDiscoveryRun, run_id)
     if not run:

@@ -4,7 +4,8 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/auth/useAuth";
 import { deleteNocDevice, fetchNocAlerts, fetchNocDevices } from "@/api/noc";
 import type { NocAlert, NocDevice } from "./types";
-import { FleetUptimeMonitor } from "./uptime/FleetUptimeMonitor";
+import { NocAssetGrid } from "./NocAssetGrid";
+import { DEVICE_FAMILIES } from "./deviceFamilies";
 import { NocFleetAlerts } from "./NocFleetAlerts";
 import { NocHubNav, useNocHubView } from "./NocHubNav";
 import { NocSitesView } from "./NocSitesView";
@@ -80,10 +81,10 @@ function AddDeviceModal({ onClose, onAdded }: { onClose: () => void; onAdded: ()
               <input value={form.ip_address} onChange={(e) => uf("ip_address", e.target.value)} className={inp} />
             </div>
             <div>
-              <label className="ut-card__label">Tipo</label>
+              <label className="ut-card__label">Familia / tipo</label>
               <select value={form.device_type} onChange={(e) => uf("device_type", e.target.value)} className={inp}>
-                {["server", "router", "switch", "workstation", "firewall", "other"].map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                {DEVICE_FAMILIES.map((f) => (
+                  <option key={f.id} value={f.id}>{f.label}</option>
                 ))}
               </select>
             </div>
@@ -180,16 +181,17 @@ export function NocDashboard() {
       {view === "wallboard" && <NocWallboard devices={devices} alerts={alerts} />}
 
       {view === "activos" && (
-        <FleetUptimeMonitor
+        <NocAssetGrid
           devices={devices}
           search={search}
           onSearchChange={setSearch}
           onRefresh={() => void refresh()}
           refreshing={refreshing}
-          canAddDevices={canAddDevices}
-          canDeleteDevices={canDeleteDevices}
-          onDeleteDevice={deleteDevice}
-          onAddDevice={() => setShowAdd(true)}
+          canManage={canAddDevices}
+          canDelete={canDeleteDevices}
+          onDelete={deleteDevice}
+          onAdd={() => setShowAdd(true)}
+          onSaved={() => void refresh()}
           lastRefresh={lastRefresh}
         />
       )}

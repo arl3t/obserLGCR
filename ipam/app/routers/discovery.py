@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session, joinedload
@@ -311,10 +313,35 @@ def get_run_topology(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/runs/{run_id}/compare")
+def compare_run(
+    run_id: int,
+    base_run_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: CurrentUser = Depends(get_current_user),
+):
+    if not svc.get_run(db, run_id):
+        raise HTTPException(status_code=404, detail="Run no encontrado")
+    try:
+        return svc.compare_runs(db, run_id, base_run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/runs/{run_id}/alerts")
+def run_alerts(run_id: int, db: Session = Depends(get_db), _user: CurrentUser = Depends(get_current_user)):
+    if not svc.get_run(db, run_id):
+        raise HTTPException(status_code=404, detail="Run no encontrado")
+    try:
+        return svc.get_critical_alerts(db, run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/runs/{run_id}/export")
 def export_run(
     run_id: int,
-    format: str = Query("json", pattern="^(json|csv|xml)$"),
+    format: str = Query("json", pattern="^(json|csv|xml|cef|ecs)$"),
     db: Session = Depends(get_db),
     _user: CurrentUser = Depends(get_current_user),
 ):
@@ -327,6 +354,12 @@ def export_run(
         return Response(content=run.raw_xml, media_type="application/xml")
     if format == "csv":
         return PlainTextResponse(svc.export_run_csv(db, run_id), media_type="text/csv")
+    if format == "cef":
+        return PlainTextResponse(svc.export_run_cef(db, run_id), media_type="text/plain")
+    if format == "ecs":
+        docs = svc.export_run_ecs(db, run_id)
+        ndjson = "\n".join(json.dumps(d, default=str) for d in docs) + ("\n" if docs else "")
+        return PlainTextResponse(ndjson, media_type="application/x-ndjson")
     return svc.export_run_json(db, run_id)
 
 

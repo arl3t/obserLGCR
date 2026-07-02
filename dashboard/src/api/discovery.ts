@@ -294,7 +294,17 @@ export async function fetchDiscoveryTopology(
   return data;
 }
 
-export async function downloadDiscoveryExport(runId: number, format: "json" | "csv" | "xml") {
+export type ExportFormat = "json" | "csv" | "xml" | "cef" | "ecs";
+
+const EXPORT_EXT: Record<ExportFormat, string> = {
+  json: "json",
+  csv: "csv",
+  xml: "xml",
+  cef: "cef.log",
+  ecs: "ecs.ndjson",
+};
+
+export async function downloadDiscoveryExport(runId: number, format: ExportFormat) {
   const res = await api.get(`/api/v1/ipam/discovery/runs/${runId}/export`, {
     params: { format },
     responseType: format === "json" ? "json" : "blob",
@@ -303,11 +313,70 @@ export async function downloadDiscoveryExport(runId: number, format: "json" | "c
     format === "json"
       ? new Blob([JSON.stringify(res.data, null, 2)], { type: "application/json" })
       : (res.data as Blob);
-  const ext = format === "xml" ? "xml" : format;
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `discovery-run-${runId}.${ext}`;
+  a.download = `discovery-run-${runId}.${EXPORT_EXT[format]}`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export interface DiscoveryDeltaSummary {
+  hosts_new: number;
+  hosts_removed: number;
+  hosts_changed: number;
+  ports_opened: number;
+  ports_closed: number;
+  critical_new: number;
+}
+
+export interface DiscoveryDelta {
+  run_id: number;
+  base_run_id: number | null;
+  has_baseline: boolean;
+  summary: DiscoveryDeltaSummary;
+  new_hosts: { ip: string; hostname: string | null; open_ports: number[]; critical_ports: number[] }[];
+  removed_hosts: { ip: string; hostname: string | null }[];
+  changed_hosts: {
+    ip: string;
+    hostname: string | null;
+    ports_opened: number[];
+    ports_closed: number[];
+    critical_opened: number[];
+    service_changes: { port: number; from: string; to: string }[];
+  }[];
+}
+
+export async function fetchDiscoveryDelta(runId: number, baseRunId?: number) {
+  const { data } = await api.get<DiscoveryDelta>(`/api/v1/ipam/discovery/runs/${runId}/compare`, {
+    params: baseRunId != null ? { base_run_id: baseRunId } : undefined,
+  });
+  return data;
+}
+
+export type AlertSeverity = "critical" | "high" | "medium" | "low";
+
+export interface DiscoveryCriticalAlert {
+  ip: string;
+  hostname: string | null;
+  port: number;
+  service: string;
+  product: string | null;
+  severity: AlertSeverity;
+  documented: boolean;
+  noc_device_id: string | null;
+  noc_open_alerts: number;
+}
+
+export interface DiscoveryAlerts {
+  run_id: number;
+  total: number;
+  by_severity: Partial<Record<AlertSeverity, number>>;
+  critical_ports: Record<string, string>;
+  alerts: DiscoveryCriticalAlert[];
+}
+
+export async function fetchDiscoveryAlerts(runId: number) {
+  const { data } = await api.get<DiscoveryAlerts>(`/api/v1/ipam/discovery/runs/${runId}/alerts`);
+  return data;
 }

@@ -110,6 +110,7 @@ export async function patchNocDevice(
     description: string;
     site: string;
     device_type: string;
+    tags: string[];
   }>,
 ): Promise<NocDeviceDetail> {
   const { data } = await api.patch<{ data?: NocDeviceDetail; device?: NocDeviceDetail }>(
