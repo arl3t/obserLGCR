@@ -4,7 +4,7 @@
 
 **Observabilidad, NOC y gobernanza de activos** — fork demo/laboratorio de LegacyHunt.
 
-PostgreSQL · API Express · Dashboard React · IPAM · nmap · sin Trino/MinIO/Keycloak.
+PostgreSQL · API Express · Dashboard React · IPAM · nmap.
 
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](docker-compose.yml)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-TimescaleDB-4169E1?style=flat-square&logo=postgresql&logoColor=white)](docs/instalacion.md)
@@ -122,7 +122,7 @@ mindmap
 ## Inicio rápido
 
 ```bash
-git clone -b main https://github.com/arl3t/obserLGCR.git
+git clone https://github.com/arl3t/obserLGCR.git
 cd obserLGCR
 cp .env.example .env
 docker compose up -d --build
