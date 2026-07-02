@@ -87,6 +87,7 @@ import {
   getSlaAudit,
 } from "../services/slaConfig.mjs";
 import { invalidateCasesKpisCache } from "../services/casesKpisCache.mjs";
+import { onGovernanceCaseClosed } from "../services/nocAssetGovernance.mjs";
 
 // Resolución JWT→CI vive en services/operatorResolver.mjs (compartida con
 // routes/outliers.mjs y cualquier handler nuevo que necesite la identidad
@@ -4943,43 +4944,14 @@ export default function incidentsRouter(runQuery, getIo, ensureFreshCtiSnapshot 
     const sev = String((trinoRow?.severity_text ?? pgCase?.severity_text) ?? "MEDIUM").toUpperCase();
     const score = Number((trinoRow?.severity_score ?? pgCase?.severity_score) ?? 50);
 
-    // Postmortem gate — paridad con workflowEngine.transitionCase (fix #8).
-    // Audit 2026-05-27: postmortem_rate venía 0% porque este endpoint cerraba
-    // sin pasar por transitionCase, bypaseando el gate. Para CRITICAL/HIGH/
-    // MEDIUM exigimos que el caso ya tenga lessons_learned grabado (vía
-    // PATCH /:id que sí acepta el campo). La UI debe popular el postmortem
-    // ANTES de disparar el cierre.
-    if (status === "CERRADO") {
-      const SEV_REQUIRES_POSTMORTEM = new Set(["CRITICAL", "HIGH", "MEDIUM"]);
-      const POSTMORTEM_MIN_CHARS = 60;
-      if (SEV_REQUIRES_POSTMORTEM.has(sev)) {
-        // P2 #17: aceptar lessons_learned en el MISMO request. Si viene en el body
-        // y cumple el mínimo, lo persistimos acá → cerrar deja de requerir 2 llamadas
-        // (PATCH /:id para el postmortem + PATCH /:id/status). Si no viene, se exige
-        // el que ya esté grabado (comportamiento previo).
-        const incomingLl = String(lessonsLearned ?? "").trim();
-        if (incomingLl.length >= POSTMORTEM_MIN_CHARS) {
-          await pgQuery(
-            `UPDATE incident_cases_pg SET lessons_learned = $2, updated_at = now() WHERE id = $1`,
-            [id, incomingLl],
-          ).catch((e) => logger.warn("incidents.status.ll_persist_failed", { caseId: id, err: e?.message }));
-        }
-        const [pmRow] = await pgQuery(
-          `SELECT COALESCE(lessons_learned, '') AS ll FROM incident_cases_pg WHERE id = $1`,
-          [id],
-        );
-        const existing = String(pmRow?.ll ?? "").trim();
-        if (existing.length < POSTMORTEM_MIN_CHARS) {
-          return res.status(422).json({
-            error:
-              `Postmortem requerido para cerrar casos ${sev} `
-              + `(mínimo ${POSTMORTEM_MIN_CHARS} caracteres). `
-              + `Envialo en el campo lessonsLearned de este request o grabalo vía PATCH /api/incidents/${id}.`,
-            field: "lessons_learned",
-            minChars: POSTMORTEM_MIN_CHARS,
-            hint: "1) Causa raíz · 2) Prevención · 3) Mejora de proceso",
-          });
-        }
+    // Postmortem opcional: si viene en el request, persistirlo antes del cierre.
+    if (status === "CERRADO" || status === "FALSO_POSITIVO") {
+      const incomingLl = String(lessonsLearned ?? "").trim();
+      if (incomingLl.length > 0) {
+        await pgQuery(
+          `UPDATE incident_cases_pg SET lessons_learned = $2, updated_at = now() WHERE id = $1`,
+          [id, incomingLl],
+        ).catch((e) => logger.warn("incidents.status.ll_persist_failed", { caseId: id, err: e?.message }));
       }
     }
 
@@ -5014,6 +4986,10 @@ export default function incidentsRouter(runQuery, getIo, ensureFreshCtiSnapshot 
       }
     } catch (pgErr) {
       logger.error("incidents.status.pg_error", { caseId: id, err: pgErr.message });
+      return res.status(500).json({
+        error: "No se pudo actualizar el estado del caso.",
+        detail: pgErr.message,
+      });
     }
 
     // ── Reapertura: re-armar el SLA (audit 2026-06-05) ─────────────────────────
@@ -5084,6 +5060,9 @@ export default function incidentsRouter(runQuery, getIo, ensureFreshCtiSnapshot 
 
     // ── Cierre: marcar tareas abiertas como SKIPPED (A4 audit 2026-06-05) ──────
     if (status === "CERRADO" || status === "FALSO_POSITIVO") {
+      void onGovernanceCaseClosed(id, operatorCi ?? "operator").catch((e) =>
+        logger.warn("incidents.status.governance_close_hook_failed", { caseId: id, err: e?.message }),
+      );
       void pgQuery(
         `UPDATE case_tasks
             SET status = 'SKIPPED',

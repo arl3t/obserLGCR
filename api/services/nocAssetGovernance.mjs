@@ -139,6 +139,54 @@ export async function acknowledgeInventoryDevice(deviceId, actor, notes = null) 
 }
 
 /**
+ * Al cerrar un caso de gobernanza (inventario/descubrimiento), suprime cola pendiente.
+ */
+export async function onGovernanceCaseClosed(caseId, actor = "operator") {
+  const [row] = await pgQuery(
+    `SELECT source_log, enrichment_data FROM incident_cases_pg WHERE id = $1`,
+    [caseId],
+  );
+  if (!row || !["noc_inventory_governance", "software_governance"].includes(row.source_log)) {
+    return { updated: false };
+  }
+
+  const ed = typeof row.enrichment_data === "string"
+    ? (() => { try { return JSON.parse(row.enrichment_data); } catch { return {}; } })()
+    : (row.enrichment_data ?? {});
+  const payload = ed.payload ?? {};
+  const deviceId = ed.noc_device_id ?? ed.node_id ?? payload.noc_device_id ?? null;
+  const queueId = ed.incidents_queue_id ?? null;
+
+  try {
+    if (deviceId) {
+      await pgQuery(
+        `UPDATE incidents_queue
+            SET status = 'suppressed', processed_at = NOW(),
+                error_message = 'Caso cerrado en gestión'
+          WHERE node_id = $1
+            AND status = 'pending'`,
+        [deviceId],
+      );
+    }
+    if (queueId) {
+      await pgQuery(
+        `UPDATE incidents_queue
+            SET status = 'done', processed_at = COALESCE(processed_at, NOW()),
+                error_message = NULL
+          WHERE id = $1
+            AND status IN ('pending', 'processing')`,
+        [queueId],
+      );
+    }
+    logger.info({ msg: "governance_case_closed", caseId, deviceId, queueId, actor });
+    return { updated: true, deviceId, queueId };
+  } catch (err) {
+    logger.warn({ msg: "governance_case_closed_failed", caseId, error: err.message });
+    return { updated: false, error: err.message };
+  }
+}
+
+/**
  * Escaneo periódico: activos sin ACK → cola de incidentes.
  */
 export async function scanUnacknowledgedAssets(limit = 50) {

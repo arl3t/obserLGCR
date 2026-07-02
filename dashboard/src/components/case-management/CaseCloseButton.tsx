@@ -18,8 +18,6 @@ const CLASSIFICATION_OPTIONS: Array<{ value: CaseClassification; label: string }
   { value: "NO_ACTIONABLE",  label: "Sin acción requerida" },
 ];
 
-const POSTMORTEM_SEVERITIES = new Set(["CRITICAL", "HIGH", "MEDIUM"]);
-const POSTMORTEM_MIN = 60;
 const FP_ESCALATION_REASON_MIN = 80;
 
 interface Props {
@@ -46,15 +44,13 @@ export function CaseCloseButton({ caseItem: c, compact, onCloseCase }: Props) {
   const [reason, setReason] = useState("");
   const [lessonsLearned, setLessonsLearned] = useState("");
 
-  const needsPostmortem = closeStatus === "CERRADO" && POSTMORTEM_SEVERITIES.has(c.severity);
   const needsLongFpReason = closeStatus === "FALSO_POSITIVO" && c.escalationSuggested;
 
   const canSubmit = useMemo(() => {
     if (closeStatus === "CERRADO" && !classification) return false;
-    if (needsPostmortem && lessonsLearned.trim().length < POSTMORTEM_MIN) return false;
     if (needsLongFpReason && reason.trim().length < FP_ESCALATION_REASON_MIN) return false;
     return true;
-  }, [closeStatus, classification, needsPostmortem, lessonsLearned, needsLongFpReason, reason]);
+  }, [closeStatus, classification, needsLongFpReason, reason]);
 
   useEscapeKey(() => setOpen(false), open && !busy);
 
@@ -78,7 +74,7 @@ export function CaseCloseButton({ caseItem: c, compact, onCloseCase }: Props) {
         closeStatus,
         reason.trim() || "Cierre manual desde gestión de incidentes",
         finalClass,
-        needsPostmortem ? lessonsLearned.trim() : undefined,
+        lessonsLearned.trim() || undefined,
       );
       toast.success(closeStatus === "FALSO_POSITIVO" ? "Caso marcado como falso positivo" : "Caso cerrado");
       setOpen(false);
@@ -224,17 +220,17 @@ export function CaseCloseButton({ caseItem: c, compact, onCloseCase }: Props) {
                 />
               </label>
 
-              {needsPostmortem && (
+              {closeStatus === "CERRADO" && (
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <span style={{ fontSize: 10, color: C.textDim, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                    Postmortem (mín. {POSTMORTEM_MIN} caracteres)
+                    Postmortem (opcional)
                   </span>
                   <textarea
                     rows={3}
                     value={lessonsLearned}
                     onChange={(e) => setLessonsLearned(e.target.value)}
                     disabled={busy}
-                    placeholder="1) Causa raíz · 2) Prevención · 3) Mejora de proceso"
+                    placeholder="Lecciones aprendidas, causa raíz, mejoras de proceso…"
                     style={{
                       background: C.bg,
                       border: `1px solid ${C.border}`,
@@ -245,9 +241,6 @@ export function CaseCloseButton({ caseItem: c, compact, onCloseCase }: Props) {
                       resize: "vertical",
                     }}
                   />
-                  <span style={{ fontSize: 10, color: lessonsLearned.trim().length >= POSTMORTEM_MIN ? C.green : C.textDim }}>
-                    {lessonsLearned.trim().length}/{POSTMORTEM_MIN}
-                  </span>
                 </label>
               )}
 

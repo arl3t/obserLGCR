@@ -35,6 +35,36 @@ export async function resolveJwtOperatorCi(req) {
     }
   }
 
+  // Login del dashboard (platform_users + JWT): mapear a soc_operators.
+  if (req.user?.isPlatformUser) {
+    const email = req.user?.email;
+    if (email) {
+      try {
+        const rows = await pgQuery(
+          `SELECT id FROM soc_operators
+            WHERE lower(email) = lower($1) AND is_active = true
+            LIMIT 1`,
+          [String(email)],
+        );
+        if (rows[0]?.id) return rows[0].id;
+      } catch {
+        /* fall through */
+      }
+    }
+    const roles = req.user?.roles ?? [];
+    if (roles.includes("admin") || roles.includes("manager")) {
+      try {
+        const rows = await pgQuery(
+          `SELECT id FROM soc_operators WHERE id = 'lab-user' AND is_active = true LIMIT 1`,
+        );
+        return rows[0]?.id ?? null;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
   // Producción: sub = KC UUID → soc_operators.kc_user_id → .id
   try {
     const rows = await pgQuery(

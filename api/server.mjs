@@ -114,7 +114,7 @@ app.use("/api/incidents", requireAuth(), incidentsRouter(runTrinoStub, getIo));
 
 // Score IOC — perfiles de scoring (config) + operadores (nombres de asignación)
 app.use("/api/scoring-profiles", scoringProfilesRouter);
-app.use("/api/operators", operatorsRouter);
+app.use("/api/operators", requireAuth(), operatorsRouter);
 
 // Registro de activos (usado por Detección/Gestión para contexto)
 app.use("/api/assets", assetRegistryRouter());

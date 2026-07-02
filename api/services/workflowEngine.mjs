@@ -1244,33 +1244,13 @@ export async function transitionCase({ caseId, toStatus, operatorCi, roleId, rea
     }
   }
 
-  // 2d. Fix #8: Postmortem obligatorio en CERRADO para severity ≥ MEDIUM.
-  //     Excepciones: roleId === 'SYSTEM' (auto-close LOW/NEGLIGIBLE no aplica
-  //     porque ya filtra por severidad). El campo se acepta vía param o se exige
-  //     que el caso ya lo tenga seteado previamente desde la UI de investigación.
-  const SEV_REQUIRES_POSTMORTEM = new Set(["CRITICAL", "HIGH", "MEDIUM"]);
-  const POSTMORTEM_MIN_CHARS = 60;
+  // Postmortem opcional en cierre: se persiste si el caller lo envía.
   let lessonsLearnedToWrite = null;
-  if (toStatus === "CERRADO"
-      && roleId !== "SYSTEM"
-      && !isForceClose
-      && SEV_REQUIRES_POSTMORTEM.has(String(c.severity ?? "").toUpperCase())) {
+  if (toStatus === "CERRADO" && roleId !== "SYSTEM" && !isForceClose) {
     const incoming = String(lessonsLearned ?? "").trim();
-    const existing = String(c.lessons_learned ?? "").trim();
-    const finalText = incoming.length >= POSTMORTEM_MIN_CHARS
-      ? incoming
-      : (existing.length >= POSTMORTEM_MIN_CHARS ? existing : "");
-    if (!finalText) {
-      throw new Error(
-        `Postmortem requerido para cerrar casos ${c.severity} (mínimo ${POSTMORTEM_MIN_CHARS} caracteres). `
-        + "Plantilla sugerida — respondé las 3 preguntas:\n"
-        + "  1) Causa raíz: ¿qué ocurrió y por qué?\n"
-        + "  2) Prevención: ¿qué control hubiera evitado este caso?\n"
-        + "  3) Mejora de proceso: ¿qué cambia en el playbook/runbook a partir de este aprendizaje?"
-      );
-    }
-    if (incoming.length >= POSTMORTEM_MIN_CHARS && incoming !== existing) {
-      lessonsLearnedToWrite = incoming;
+    if (incoming.length > 0) {
+      const existing = String(c.lessons_learned ?? "").trim();
+      if (incoming !== existing) lessonsLearnedToWrite = incoming;
     }
   }
 
