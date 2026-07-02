@@ -294,7 +294,7 @@ export function DetectionNetworkDiscoveryPage() {
         </span>
         {statusQ.data?.runner_configured && (
           <span className={cn("rounded-full px-2 py-0.5", runnerOk ? "bg-cyan-500/15 text-cyan-300" : "bg-amber-500/15 text-amber-300")}>
-            host runner {runnerOk ? "conectado" : "sin conexión — python3 scripts/nmap-host-runner.py"}
+            host runner {runnerOk ? "conectado" : "sin conexión — docker compose up -d nmap-runner"}
           </span>
         )}
       </div>

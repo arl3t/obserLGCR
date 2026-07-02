@@ -44,7 +44,27 @@ En Linux, Docker Compose añade `host.docker.internal` vía `extra_hosts: host-g
 
 ## Instalación del host runner (VPS / Linux)
 
-### 1. Dependencias en el host
+### Opción A — Docker Compose (recomendado)
+
+El servicio `nmap-runner` usa `network_mode: host` para escanear la LAN real y arranca con el stack:
+
+```bash
+cd ~/obserLGCR
+docker compose up -d nmap-runner ipam
+```
+
+Verificar:
+
+```bash
+curl -s http://127.0.0.1:8791/health
+docker compose exec ipam python -c "from app.services.nmap_runner_client import check_nmap_runner_health; print(check_nmap_runner_health())"
+```
+
+Debe imprimir `True`. En el dashboard: **Detección → Descubrimiento** → badge *host runner conectado*.
+
+### Opción B — Script en el host (Mac dev o sin Docker)
+
+#### 1. Dependencias en el host
 
 ```bash
 sudo apt update
@@ -65,7 +85,8 @@ export NMAP_RUNNER_BIND=0.0.0.0
 ### 3. Arrancar el runner
 
 ```bash
-python3 scripts/nmap-host-runner.py
+./scripts/start-nmap-runner.sh
+# o: python3 scripts/nmap-host-runner.py
 ```
 
 Salida esperada:
@@ -188,7 +209,7 @@ Script: [`scripts/nmap-host-runner.py`](../scripts/nmap-host-runner.py).
 
 | Síntoma | Causa | Solución |
 |---------|--------|----------|
-| `host runner sin conexión` | Proceso no corre | `python3 scripts/nmap-host-runner.py` o systemd |
+| `host runner sin conexión` | Runner no corre o token distinto | `docker compose up -d nmap-runner` · mismo `NMAP_RUNNER_TOKEN` en `.env` |
 | Health 401 | Token distinto | Mismo `NMAP_RUNNER_TOKEN` en `.env` y al exportar |
 | `nmap: false` en health | nmap no instalado en host | `apt install nmap` |
 | Scan 0 hosts en LAN | Runner no corre o CIDR incorrecto | Verificar runner + segmento alcanzable desde el VPS |

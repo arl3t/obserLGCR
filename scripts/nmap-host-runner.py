@@ -84,10 +84,11 @@ def validate_cidr(raw: str) -> str:
 def authorized(headers: dict[str, str]) -> bool:
     if not TOKEN:
         return True
-    auth = headers.get("Authorization", "")
+    lower = {k.lower(): v for k, v in headers.items()}
+    auth = lower.get("authorization", "")
     if auth == f"Bearer {TOKEN}":
         return True
-    return headers.get("X-Nmap-Runner-Token", "") == TOKEN
+    return lower.get("x-nmap-runner-token", "") == TOKEN
 
 
 def run_nmap_scan(

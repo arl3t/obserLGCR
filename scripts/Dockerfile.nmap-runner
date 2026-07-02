@@ -1,0 +1,19 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends nmap \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/nmap-host-runner.py /app/nmap-host-runner.py
+
+ENV NMAP_RUNNER_PORT=8791 \
+    NMAP_RUNNER_BIND=0.0.0.0
+
+EXPOSE 8791
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
+  CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8791/health', timeout=3)"
+
+CMD ["python3", "/app/nmap-host-runner.py"]

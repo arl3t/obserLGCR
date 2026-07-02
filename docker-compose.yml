@@ -96,6 +96,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      nmap-runner:
+        condition: service_started
     environment:
       DATABASE_URL: postgresql://${PG_USER:-obserlgcr}:${PG_PASSWORD:-obserlgcr}@postgres:5432/${PG_DATABASE:-obserlgcr}
       AGENT_JWT_SECRET: ${AGENT_JWT_SECRET:-change-me-agent-jwt-secret}
@@ -109,6 +111,22 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "${IPAM_PORT:-8790}:8000"
+
+  # nmap en la red del host (LAN 192.168.x.x). IPAM se conecta vía host.docker.internal:8791.
+  nmap-runner:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.nmap-runner
+    image: obserlgcr-nmap-runner:local
+    container_name: obserlgcr-nmap-runner
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      NMAP_RUNNER_PORT: ${NMAP_RUNNER_PORT:-8791}
+      NMAP_RUNNER_BIND: 0.0.0.0
+      NMAP_RUNNER_TOKEN: ${NMAP_RUNNER_TOKEN:-change-me-nmap-runner}
+      NMAP_TIMEOUT_SEC: ${NMAP_TIMEOUT_SEC:-600}
+      NMAP_HOST_TIMEOUT_SEC: ${NMAP_HOST_TIMEOUT_SEC:-5}
 
 volumes:
   obserlgcr-pgdata:
