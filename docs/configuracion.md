@@ -13,7 +13,7 @@ Estas variables controlan el despliegue con `docker compose`:
 | `PG_USER` | `obserlgcr` | Usuario PostgreSQL |
 | `PG_PASSWORD` | `obserlgcr` | Contraseña PostgreSQL |
 | `PG_DATABASE` | `obserlgcr` | Nombre de la base de datos |
-| `PG_PORT` | `5432` | Puerto PostgreSQL en el host |
+| `PG_PORT` | `5433` | Puerto PostgreSQL en el host (5432 interno del contenedor) |
 | `API_PORT` | `8787` | Puerto API en el host |
 | `DASHBOARD_PORT` | `8080` | Puerto dashboard en el host |
 | `LOG_LEVEL` | `info` | Nivel de log del API |
