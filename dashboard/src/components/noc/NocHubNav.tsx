@@ -3,8 +3,8 @@ import { LayoutDashboard, MapPin, Radio, Settings, Table2 } from "lucide-react";
 import type { NocHubView } from "./types";
 
 const VIEWS: { id: NocHubView; label: string; icon: typeof Radio }[] = [
-  { id: "wallboard", label: "Wallboard", icon: LayoutDashboard },
   { id: "activos", label: "Activos", icon: Table2 },
+  { id: "wallboard", label: "Wallboard", icon: LayoutDashboard },
   { id: "alerts", label: "Alertas", icon: Radio },
   { id: "sites", label: "Sitios", icon: MapPin },
 ];
@@ -15,13 +15,13 @@ interface NocHubNavProps {
 
 export function NocHubNav({ openAlerts }: NocHubNavProps) {
   const [params, setParams] = useSearchParams();
-  const raw = params.get("view") ?? "wallboard";
+  const raw = params.get("view");
   const view: NocHubView =
     raw === "activos" || raw === "fleet" || raw === "alerts" || raw === "sites" || raw === "wallboard"
       ? raw === "fleet"
         ? "activos"
         : (raw as NocHubView)
-      : "wallboard";
+      : "activos";
 
   return (
     <nav className="noc-hub-nav" aria-label="Vistas del centro NOC">
@@ -55,8 +55,8 @@ export function NocHubNav({ openAlerts }: NocHubNavProps) {
 
 export function useNocHubView(): NocHubView {
   const [params] = useSearchParams();
-  const raw = params.get("view") ?? "wallboard";
-  if (raw === "activos" || raw === "fleet") return "activos";
-  if (raw === "alerts" || raw === "sites") return raw;
-  return "wallboard";
+  const raw = params.get("view");
+  if (!raw || raw === "activos" || raw === "fleet") return "activos";
+  if (raw === "alerts" || raw === "sites" || raw === "wallboard") return raw;
+  return "activos";
 }

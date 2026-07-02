@@ -58,6 +58,20 @@ const TYPE_CONFIG = {
     defaultScore: 68,
     incidentCategory: "INVESTIGATION",
   },
+  critical_port_exposure: {
+    sourceLog: "discovery_security",
+    mitreTacticId: "TA0007",
+    scoreMap: { CRITICAL: 86, HIGH: 78, MEDIUM: 68, LOW: 55, NEGLIGIBLE: 45 },
+    defaultScore: 78,
+    incidentCategory: "UNAUTHORIZED_ACCESS",
+  },
+  cve_detected: {
+    sourceLog: "discovery_security",
+    mitreTacticId: "TA0001",
+    scoreMap: { CRITICAL: 90, HIGH: 82, MEDIUM: 70, LOW: 58, NEGLIGIBLE: 45 },
+    defaultScore: 82,
+    incidentCategory: "INVESTIGATION",
+  },
 };
 
 function isIp(v) {
@@ -82,6 +96,10 @@ function buildRecommendedAction(row) {
       return `Activo no reconocido: ${row.hostname}. Verificar origen, documentar en inventario (ACK) o aislar si es rogue.`;
     case "undocumented_host":
       return `Host descubierto sin documentar: ${row.hostname}. Confirmar legitimidad y marcar como activo conocido.`;
+    case "critical_port_exposure":
+      return `Puerto crítico expuesto en ${row.hostname}: ${p.port ?? "?"}/${p.protocol ?? "tcp"} (${p.service ?? "servicio desconocido"}). Validar exposición, owner y segmentación.`;
+    case "cve_detected":
+      return `CVE detectado en ${row.hostname}: ${p.cve_id ?? "CVE desconocido"}${p.cvss_score ? ` (CVSS ${p.cvss_score})` : ""}. Validar versión afectada, parche o mitigación.`;
     default:
       return `Revisar alerta NOC: ${row.incident_type} en ${row.hostname}.`;
   }

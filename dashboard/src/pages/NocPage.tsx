@@ -8,7 +8,7 @@ export function NocPage() {
     <>
       <PageHeader
         title="Centro NOC — Monitoreo de infraestructura"
-        subtitle="Wallboard operativo · activos · alertas · sitios · salud por activo"
+        subtitle="Activos · gestión de infraestructura · wallboard · alertas · sitios"
       />
       <NocDashboard />
     </>

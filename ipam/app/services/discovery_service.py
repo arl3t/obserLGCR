@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import ipaddress
+import json
 import logging
 import threading
 from collections import Counter
@@ -262,6 +264,8 @@ def execute_run(
                     open_incidents_on_unacked=job.open_incidents_on_unacked and not skip_incidents,
                 )
 
+        security_incidents = enqueue_security_findings(db, run, hosts)
+
         finished = datetime.now(UTC)
         run.status = "completed"
         run.finished_at = finished
@@ -272,7 +276,12 @@ def execute_run(
         run.nmap_summary = summary
         run.nmap_command = command
         run.raw_xml = raw_xml
-        run.stats_json = {**stats, "integration": integration, **({"governance": governance} if governance else {})}
+        run.stats_json = {
+            **stats,
+            "integration": integration,
+            **({"governance": governance} if governance else {}),
+            **({"security_incidents": security_incidents} if security_incidents else {}),
+        }
 
         if run.job_id:
             job = db.get(NetworkDiscoveryJob, run.job_id)
@@ -1030,6 +1039,147 @@ def apply_run_governance(
             )
 
     return governance
+
+
+def _finding_dedup(*parts: object) -> str:
+    raw = "|".join(str(p or "") for p in parts)
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _cve_severity(vuln: Any) -> str:
+    score = getattr(vuln, "cvss_score", None)
+    if score is not None:
+        try:
+            n = float(score)
+            if n >= 9:
+                return "CRITICAL"
+            if n >= 7:
+                return "HIGH"
+            if n >= 4:
+                return "MEDIUM"
+        except (TypeError, ValueError):
+            pass
+    sev = str(getattr(vuln, "severity", "") or "").upper()
+    if sev in {"CRITICAL", "HIGH", "MEDIUM", "LOW", "NEGLIGIBLE"}:
+        return sev
+    return "HIGH"
+
+
+def enqueue_security_findings(
+    db: Session,
+    run: NetworkDiscoveryRun,
+    hosts: list[ParsedHost],
+) -> dict[str, int]:
+    """Encola incidentes por CVE y puertos críticos detectados por discovery."""
+    up_hosts = [h for h in hosts if h.status == "up"]
+    if not up_hosts:
+        return {"critical_port_incidents": 0, "cve_incidents": 0}
+
+    ips = [h.ip for h in up_hosts]
+    noc_map = _noc_lookup(db, ips)
+    critical_enqueued = 0
+    cve_enqueued = 0
+
+    def insert_incident(
+        incident_type: str,
+        severity: str,
+        ip: str,
+        hostname: str | None,
+        dedup_key: str,
+        payload: dict[str, Any],
+    ) -> bool:
+        noc = noc_map.get(ip, {})
+        row = db.execute(
+            text(
+                """
+                INSERT INTO incidents_queue (
+                  incident_type, severity, node_id, hostname, dedup_key, payload, status
+                ) VALUES (
+                  :incident_type, :severity, CAST(:node_id AS uuid), :hostname,
+                  :dedup_key, CAST(:payload AS jsonb), 'pending'
+                )
+                ON CONFLICT (dedup_key) WHERE (status = 'pending') DO NOTHING
+                RETURNING id
+                """,
+            ),
+            {
+                "incident_type": incident_type,
+                "severity": severity,
+                "node_id": noc.get("noc_device_id"),
+                "hostname": hostname or ip,
+                "dedup_key": dedup_key,
+                "payload": json.dumps(
+                    {
+                        **payload,
+                        "run_id": run.id,
+                        "job_id": run.job_id,
+                        "ip_address": ip,
+                        "hostname": hostname,
+                        "noc_device_id": noc.get("noc_device_id"),
+                        "policy": "discovery_security_findings",
+                        "discovered_via": "nmap",
+                    },
+                ),
+            },
+        ).first()
+        return bool(row)
+
+    for host in up_hosts:
+        open_ports = [p for p in host.ports if p.state in ("open", "open|filtered")]
+        for port in open_ports:
+            if port.port not in CRITICAL_PORTS:
+                continue
+            severity = "CRITICAL" if port.port in (3389, 445, 23, 5900, 6379, 27017) else "HIGH"
+            if insert_incident(
+                "critical_port_exposure",
+                severity,
+                host.ip,
+                host.hostname,
+                _finding_dedup("critical_port_exposure", host.ip, port.protocol, port.port),
+                {
+                    "port": port.port,
+                    "protocol": port.protocol,
+                    "service": CRITICAL_PORT_LABELS.get(port.port, port.service or "?"),
+                    "product": port.product,
+                    "version": port.version,
+                    "title": f"Puerto crítico expuesto: {port.port}/{port.protocol}",
+                },
+            ):
+                critical_enqueued += 1
+
+        for vuln in host.vulnerabilities:
+            cve_id = getattr(vuln, "cve_id", None)
+            if not cve_id:
+                continue
+            if insert_incident(
+                "cve_detected",
+                _cve_severity(vuln),
+                host.ip,
+                host.hostname,
+                _finding_dedup("cve_detected", host.ip, cve_id, getattr(vuln, "port", None)),
+                {
+                    "cve_id": cve_id,
+                    "severity": getattr(vuln, "severity", None),
+                    "cvss_score": getattr(vuln, "cvss_score", None),
+                    "title": getattr(vuln, "title", None),
+                    "port": getattr(vuln, "port", None),
+                    "protocol": getattr(vuln, "protocol", None),
+                    "script_id": getattr(vuln, "script_id", None),
+                    "details": getattr(vuln, "details", None),
+                },
+            ):
+                cve_enqueued += 1
+
+    if critical_enqueued or cve_enqueued:
+        db.commit()
+        logger.info(
+            "discovery_security_incidents run=%s critical_ports=%s cves=%s",
+            run.id,
+            critical_enqueued,
+            cve_enqueued,
+        )
+
+    return {"critical_port_incidents": critical_enqueued, "cve_incidents": cve_enqueued}
 
 
 def get_critical_alerts(db: Session, run_id: int) -> dict[str, Any]:
