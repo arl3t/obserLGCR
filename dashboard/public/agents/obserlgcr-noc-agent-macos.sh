@@ -365,8 +365,9 @@ cmd_setup() {
   read -rp "  URL del servidor [$OBSERLGCR_URL]: " url; [[ -n "$url" ]] && OBSERLGCR_URL="$url"
   echo -n "  Email del agente [noc-agent@obserlgcr.local]: "
   read -r email; AGENT_EMAIL="${email:-noc-agent@obserlgcr.local}"
-  echo -n "  Password del agente: "
-  read -rs pass; echo; AGENT_PASS="$pass"
+  echo -n "  Password del agente [changeme-noc-agent]: "
+  read -rs pass; echo
+  AGENT_PASS="${pass:-changeme-noc-agent}"
   echo -n "  Token estático legacy (vacío = JWT): "
   read -r tok; NOC_AGENT_TOKEN="${tok:-}"
 

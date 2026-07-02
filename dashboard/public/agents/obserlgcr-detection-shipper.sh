@@ -179,8 +179,9 @@ cmd_setup() {
   read -rp "  URL API [$OBSERLGCR_URL]: " url; [[ -n "$url" ]] && OBSERLGCR_URL="$url"
   echo -n "  Email agente [noc-agent@obserlgcr.local]: "
   read -r email; AGENT_EMAIL="${email:-noc-agent@obserlgcr.local}"
-  echo -n "  Password agente: "
-  read -rs pass; echo; AGENT_PASS="$pass"
+  echo -n "  Password agente [changeme-noc-agent]: "
+  read -rs pass; echo
+  AGENT_PASS="${pass:-changeme-noc-agent}"
 
   mkdir -p "$(dirname "$ENV_FILE")"
   cat > "$ENV_FILE" <<EOF

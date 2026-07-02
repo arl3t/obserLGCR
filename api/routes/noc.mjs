@@ -31,6 +31,9 @@ import {
   syncSnmpTargetForDevice,
 } from "../services/nocSettingsService.mjs";
 
+/** Agente cron 5 min + jitter 120 s + margen watcher → mín. ~8 min */
+export const NOC_DEFAULT_HEARTBEAT_TIMEOUT_SECS = 480;
+
 const NOC_AGENT_TOKEN = (process.env.NOC_AGENT_TOKEN ?? "").trim();
 const CRON_SECRET = (process.env.CRON_SECRET ?? process.env.INTERNAL_SERVICE_TOKEN ?? "").trim();
 const OIDC_ENABLED = process.env.OIDC_ENABLED?.trim() === "true";
@@ -353,7 +356,7 @@ export default function nocRouter() {
         device_type = "server",
         site,
         description,
-        heartbeat_timeout_secs = 120,
+        heartbeat_timeout_secs = NOC_DEFAULT_HEARTBEAT_TIMEOUT_SECS,
         cpu_threshold_pct = 90,
         mem_threshold_pct = 90,
         rtt_threshold_ms = 500,

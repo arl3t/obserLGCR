@@ -68,16 +68,19 @@ export function DeviceThresholdsPanel({
 
       {open && (
         <form onSubmit={submit} className="noc-thresholds-form noc-thresholds-form--compact">
-          <div>
-            <label className="ut-card__label">Timeout heartbeat (s)</label>
-            <input
-              className="ut-input ut-input--sm"
-              type="number"
-              min={30}
-              value={form.heartbeat_timeout_secs}
-              onChange={(e) => setForm((p) => ({ ...p, heartbeat_timeout_secs: e.target.value }))}
-            />
-          </div>
+        <div>
+          <label className="ut-card__label">Timeout heartbeat (s)</label>
+          <input
+            className="ut-input ut-input--sm"
+            type="number"
+            min={180}
+            value={form.heartbeat_timeout_secs}
+            onChange={(e) => setForm((p) => ({ ...p, heartbeat_timeout_secs: e.target.value }))}
+          />
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            Con agente cada 5 min use ≥480 s (evita alertas down falsas).
+          </p>
+        </div>
           <div>
             <label className="ut-card__label">CPU máx (%)</label>
             <input

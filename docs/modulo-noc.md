@@ -221,9 +221,16 @@ Comandos: `-Setup`, `-Renew`, `-Status`, `-Uninstall`, `-Help`.
 
 ## Heartbeat watcher
 
-El API ejecuta un watcher cada 30s (configurable) que:
+El watcher interno (cada ~30 s) marca **down** si no llega heartbeat dentro del timeout configurado.
 
-1. Detecta dispositivos sin heartbeat dentro del timeout configurado
+| Parámetro | Recomendado |
+|-----------|-------------|
+| **Timeout heartbeat** | **≥480 s** (8 min) si el agente corre cada **5 min** |
+| Timeout 120 s | Provoca caídas/alertas cada ciclo (falso positivo) |
+
+Fórmula: `intervalo_cron (300s) + jitter_máx (120s) + margen (~60s)`.
+
+1. Detecta dispositivos sin heartbeat dentro del timeout
 2. Marca el dispositivo como `offline`
 3. Crea alerta `down` si no existe una abierta
 4. Registra log de error

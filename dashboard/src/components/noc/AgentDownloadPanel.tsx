@@ -26,7 +26,8 @@ export function AgentDownloadPanel() {
         Instalación del agente
       </h2>
       <p className="ut-sidebar__text" style={{ marginBottom: "1rem" }}>
-        Heartbeat cada 5 min · credencial lab: <code>noc-agent@obserlgcr.local</code>
+        Heartbeat cada 5 min · lab: <code>noc-agent@obserlgcr.local</code> /{" "}
+        <code>changeme-noc-agent</code>
       </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {agents.map((a) => (

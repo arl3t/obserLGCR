@@ -110,7 +110,7 @@ export function AgentRegistrationSection() {
   }
 
   const snippetEmail = editForm?.email ?? primary?.email ?? "noc-agent@obserlgcr.local";
-  const snippetPassword = editForm?.password || "<password-configurado>";
+  const snippetPassword = editForm?.password || "changeme-noc-agent";
 
   const tokenSnippet = `curl -s -X POST ${apiUrl}/api/auth/token \\
   -H 'Content-Type: application/json' \\
@@ -153,8 +153,10 @@ sudo ./obserlgcr-noc-agent-linux.sh --setup
         <p className="text-xs text-muted-foreground">
           Email y contraseña usados por los scripts de registro de activos: agente NOC, shipper de
           detección, inventario (<code>POST /api/inventory/report</code>) y SNMP/Telegraf (
-          <code>POST /api/noc/snmp/ingest</code>). Tras cambiar la contraseña, renovar token en cada
-          host (<code>--renew</code>) o repetir <code>--setup</code>.
+          <code>POST /api/noc/snmp/ingest</code>). Laboratorio:{" "}
+          <code>noc-agent@obserlgcr.local</code> / <code>changeme-noc-agent</code> (Enter en{" "}
+          <code>--setup</code> del script). Tras cambiar la contraseña, renovar token en cada host (
+          <code>--renew</code>) o repetir <code>--setup</code>.
         </p>
 
         <div className="rounded-md border border-border bg-muted/20 p-4">
