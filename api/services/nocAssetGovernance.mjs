@@ -77,49 +77,61 @@ export async function acknowledgeInventoryDevice(deviceId, actor, notes = null) 
   );
   if (!dev) return null;
 
-  await pgQuery(
-    `UPDATE incidents_queue
-        SET status = 'suppressed', processed_at = NOW(),
-            error_message = 'Activo reconocido (inventory ACK)'
-      WHERE node_id = $1
-        AND incident_type IN ('unknown_asset', 'undocumented_host')
-        AND status = 'pending'`,
-    [deviceId],
-  );
+  try {
+    await pgQuery(
+      `UPDATE incidents_queue
+          SET status = 'suppressed', processed_at = NOW(),
+              error_message = 'Activo reconocido (inventory ACK)'
+        WHERE node_id = $1
+          AND incident_type IN ('unknown_asset', 'undocumented_host')
+          AND status = 'pending'`,
+      [deviceId],
+    );
+  } catch (err) {
+    logger.warn({ msg: "inventory_ack_queue_suppress_failed", deviceId, error: err.message });
+  }
 
-  await pgQuery(
-    `UPDATE incident_cases_pg c
-        SET timeline = COALESCE(timeline, '[]'::jsonb) || jsonb_build_array(
-              jsonb_build_object(
-                'ts', to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-                'action', 'INVENTORY_ACK',
-                'operator', $2,
-                'detail', 'Activo reconocido en inventario NOC'
-              )
-            ),
-            updated_at = NOW()
-      WHERE c.status NOT IN ('CERRADO', 'FALSO_POSITIVO')
-        AND c.source_log = 'noc_inventory_governance'
-        AND (
-          c.enrichment_data->>'noc_device_id' = $1::text
-          OR c.enrichment_data->'payload'->>'noc_device_id' = $1::text
-          OR c.hostname = $3
-        )`,
-    [deviceId, actor, dev.hostname],
-  );
+  try {
+    await pgQuery(
+      `UPDATE incident_cases_pg c
+          SET timeline = COALESCE(timeline, '[]'::jsonb) || jsonb_build_array(
+                jsonb_build_object(
+                  'ts', to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+                  'action', 'INVENTORY_ACK',
+                  'operator', $2::text,
+                  'detail', 'Activo reconocido en inventario NOC'
+                )
+              ),
+              updated_at = NOW()
+        WHERE c.status NOT IN ('CERRADO', 'FALSO_POSITIVO')
+          AND c.source_log = 'noc_inventory_governance'
+          AND (
+            c.enrichment_data->>'noc_device_id' = $1::text
+            OR c.enrichment_data->'payload'->>'noc_device_id' = $1::text
+            OR c.hostname = $3::text
+          )`,
+      [deviceId, actor, dev.hostname],
+    );
+  } catch (err) {
+    logger.warn({ msg: "inventory_ack_case_timeline_failed", deviceId, error: err.message });
+  }
 
   if (dev.ip_address) {
-    await pgQuery(
-      `UPDATE network_discovery_hosts h
-          SET documented = TRUE,
-              documented_at = NOW(),
-              documented_by = $2
-        WHERE h.ip_address = $1::inet
-          AND h.run_id = (
-            SELECT MAX(run_id) FROM network_discovery_hosts WHERE ip_address = $1::inet
-          )`,
-      [dev.ip_address, actor],
-    );
+    try {
+      await pgQuery(
+        `UPDATE network_discovery_hosts h
+            SET documented = TRUE,
+                documented_at = NOW(),
+                documented_by = $2::text
+          WHERE h.ip_address = $1::inet
+            AND h.run_id = (
+              SELECT MAX(run_id) FROM network_discovery_hosts WHERE ip_address = $1::inet
+            )`,
+        [dev.ip_address, actor],
+      );
+    } catch (err) {
+      logger.warn({ msg: "inventory_ack_discovery_document_failed", deviceId, error: err.message });
+    }
   }
 
   logger.info({ msg: "inventory_ack", deviceId, hostname: dev.hostname, actor });

@@ -1,5 +1,15 @@
+import { isAxiosError } from "axios";
 import { api } from "@/api/client";
 import type { NocAlert, NocDevice } from "@/components/noc/types";
+
+function apiErrorMessage(err: unknown, fallback: string): string {
+  if (isAxiosError(err)) {
+    const body = err.response?.data as { error?: string; detail?: string } | undefined;
+    return body?.error ?? body?.detail ?? err.message ?? fallback;
+  }
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
 
 export interface SnmpSettings {
   default_community: string;
@@ -76,13 +86,17 @@ export async function fetchNocDevice(id: string): Promise<NocDeviceDetail> {
 }
 
 export async function acknowledgeNocInventory(deviceId: string, notes?: string): Promise<NocDeviceDetail> {
-  const { data } = await api.post<{ data?: NocDeviceDetail; device?: NocDeviceDetail }>(
-    `/api/noc/devices/${deviceId}/inventory-ack`,
-    notes ? { notes } : {},
-  );
-  const row = data.data ?? data.device;
-  if (!row) throw new Error("Error al reconocer activo");
-  return row;
+  try {
+    const { data } = await api.post<{ data?: NocDeviceDetail; device?: NocDeviceDetail }>(
+      `/api/noc/devices/${deviceId}/inventory-ack`,
+      notes ? { notes } : {},
+    );
+    const row = data.data ?? data.device;
+    if (!row) throw new Error("Error al reconocer activo");
+    return row;
+  } catch (err) {
+    throw new Error(apiErrorMessage(err, "No se pudo reconocer el activo en inventario"));
+  }
 }
 
 export async function patchNocDevice(

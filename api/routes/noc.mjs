@@ -541,8 +541,12 @@ export default function nocRouter() {
       void syncAssetRegistryFromNoc(dev.ip_address ?? null);
       return res.json({ success: true, data: dev, device: dev });
     } catch (err) {
-      logger.error("noc_inventory_ack", { msg: err.message });
-      return res.status(500).json({ success: false, error: "Error interno del servidor." });
+      logger.error("noc_inventory_ack", { deviceId: req.params.id, msg: err.message });
+      return res.status(500).json({
+        success: false,
+        error: "No se pudo reconocer el activo en inventario.",
+        detail: err.message,
+      });
     }
   });
 
